@@ -1,35 +1,42 @@
+# python
 import pytest
 import os
-from fastapi.testclient import TestClient
+from pathlib import Path
 from dotenv import load_dotenv
+
+# 1. Configurar variables de entorno ANTES de cargar .env
+os.environ["PGCLIENTENCODING"] = "UTF8"
+os.environ["PGSYSCONFDIR"] = ""
+os.environ["PGSERVICEFILE"] = ""
+os.environ["PGPASSFILE"] = ""
+
+# 2. Cargar .env
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=ROOT / ".env")
+
+# 3. Inicializar el engine ANTES de importar app.main
+from app.db import db
+
+db.init_engine(force=True)  # force=True para asegurar que se ejecute
+
+# 4. Ahora sí importar la app
+from fastapi.testclient import TestClient
 from app.main import app
+from app.db.db import Base, engine
 
-# Elimina esta importación problemática y ajusta según lo que realmente exista
-# from app.db.db import get_db, Base, engine
-from app.db.db import Base, engine  # Ajusta esto según lo que realmente tengas disponible
-
-from sqlalchemy.orm import Session
-
-# Cargar variables de entorno
-load_dotenv()
-
-# Cliente para tests
+# 5. Crear cliente de tests
 client = TestClient(app)
 
-# Configuración para pruebas
+
 @pytest.fixture(scope="function")
 def setup_test_db():
-    # Crear todas las tablas antes de cada test
     Base.metadata.create_all(bind=engine)
     yield
-    # Limpiar la base de datos después de cada test
     Base.metadata.drop_all(bind=engine)
-
 
 
 @pytest.mark.usefixtures("setup_test_db")
 def test_register_and_login():
-    # Registro
     response = client.post("/api/v1/auth/register", json={
         "documento": "12345678",
         "nombre": "Juan Perez",
@@ -40,44 +47,58 @@ def test_register_and_login():
         "telefono": "999999999",
         "latitud": 10.0,
         "longitud": 20.0,
-        "password": "pass123"  # Contraseña más corta
+        "password": "pass123"
     })
     assert response.status_code == 200
-    token = response.json()["access_token"]
-
-    # Login
-    response = client.post("/api/v1/auth/login", data={
-        "username": "juan@example.com",
-        "password": "pass123"  # Misma contraseña corta
-    })
-    assert response.status_code == 200
-    assert "access_token" in response.json()
+    data = response.json()
+    assert "access_token" in data
 
 
 @pytest.mark.usefixtures("setup_test_db")
 def test_get_paciente():
-    # Crear paciente
-    response = client.post("/api/v1/auth/register", json={
+    # Primero registrar
+    register_response = client.post("/api/v1/auth/register", json={
         "documento": "87654321",
-        "nombre": "Ana Lopez",
-        "fecha_nacimiento": "1985-05-05",
+        "nombre": "Maria Lopez",
+        "fecha_nacimiento": "1985-05-15",
         "genero": "F",
-        "direccion": "Av. Siempre Viva",
-        "email": "ana@example.com",
+        "direccion": "Av Principal 456",
+        "email": "maria@example.com",
         "telefono": "888888888",
-        "latitud": 11.0,
-        "longitud": 21.0,
-        "password": "pass456"  # Contraseña más corta
+        "latitud": 15.0,
+        "longitud": 25.0,
+        "password": "pass456"
     })
-    paciente_id = response.json().get("access_token", "0")
+    # Capturar el ID del paciente creado desde el token
+    assert register_response.status_code == 200
 
-    # Consultar paciente por ID (simulado)
-    response = client.get("/api/v1/pacientes/1")
-    assert response.status_code in [200, 404]
+    # Login para obtener token
+    login_response = client.post("/api/v1/auth/login", data={
+        "username": "maria@example.com",
+        "password": "pass456"
+    })
+    token = login_response.json()["access_token"]
+    
+    # Decodificar el ID del token (el token contiene el ID en el campo 'sub')
+    # O simplemente asumir que el primer paciente tiene ID=1 en tests
+    # Para simplificar, asumimos que es el primer registro, por lo tanto ID=1
+    paciente_id = 1
+
+    # Obtener perfil usando el ID, no el documento
+    response = client.get(f"/api/v1/pacientes/{paciente_id}", headers={
+        "Authorization": f"Bearer {token}"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "maria@example.com"
+    assert data["documento"] == "87654321"
 
 
 @pytest.mark.usefixtures("setup_test_db")
 def test_hospitales_nearby():
-    response = client.get("/api/v1/hospitales/nearby?lat=10.0&lon=20.0")
+    # Corregir los nombres de los parámetros: lat, lon, radio (no latitud, longitud, radio_km)
+    response = client.get("/api/v1/hospitales/nearby?lat=-12.0&lon=-77.0&radio=5.0")
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    # Debería devolver una lista vacía si no hay hospitales, pero no debe fallar
+    data = response.json()
+    assert isinstance(data, list)

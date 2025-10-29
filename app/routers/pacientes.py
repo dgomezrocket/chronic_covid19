@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.db.db import SessionLocal
+from app.db.db import get_db
 from app.models.models import Paciente, RespuestaFormulario
 from app.schemas.schemas import PacienteOut, PacienteUpdate, RespuestaFormularioOut, RespuestaFormularioCreate
 from app.core.security import verify_password
@@ -8,12 +8,7 @@ from typing import List
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 @router.get("/{id}", response_model=PacienteOut)
 def get_paciente(id: int, db: Session = Depends(get_db)):

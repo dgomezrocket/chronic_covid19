@@ -1,22 +1,56 @@
+# python
 import os
+from typing import Generator, Optional
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Cargar variables de entorno
-load_dotenv()
-
-# Configuración de la conexión a la base de datos
-DATABASE_URL = f"postgresql://{os.environ.get('POSTGRES_USER')}:{os.environ.get('POSTGRES_PASSWORD')}@{os.environ.get('POSTGRES_SERVER')}/{os.environ.get('POSTGRES_DB')}"
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Añade esta función si no existe
-def get_db():
-    db = SessionLocal()
+engine: Optional[object] = None
+SessionLocal: Optional[sessionmaker] = None
+
+
+# python
+def init_engine(force: bool = False) -> None:
+    global engine, SessionLocal
+    if engine is not None and not force:
+        return  # Ya inicializado
+
+    os.environ["PGCLIENTENCODING"] = "UTF8"
+    os.environ["PGSYSCONFDIR"] = ""
+    os.environ["PGSERVICEFILE"] = ""
+    os.environ["PGPASSFILE"] = ""
+
+    load_dotenv()
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        user = os.getenv("POSTGRES_USER", "postgres")
+        pw = os.getenv("POSTGRES_PASSWORD", "")
+        host = os.getenv("POSTGRES_SERVER", "localhost")
+        db = os.getenv("POSTGRES_DB", "chronic_covid19")
+        database_url = f"postgresql+psycopg2://{user}:{pw}@{host}:5432/{db}?client_encoding=utf8"
+
+    connect_args = {}
+    if database_url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+
+    engine = create_engine(database_url, connect_args=connect_args)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def get_engine():
+    init_engine()
+    return engine
+
+def get_sessionmaker():
+    init_engine()
+    return SessionLocal
+
+def get_db() -> Generator:
+    Session = get_sessionmaker()
+    db = Session()
     try:
         yield db
     finally:

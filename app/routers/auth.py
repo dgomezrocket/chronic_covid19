@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.db.db import SessionLocal
+from app.db.db import get_db
 from app.models.models import Paciente, Medico, Coordinador, RolEnum
 from app.schemas.schemas import PacienteCreate, Token, TokenData
 from app.core.security import get_password_hash, verify_password, create_access_token
@@ -8,13 +8,6 @@ from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/register", response_model=Token)
 def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):

@@ -1,18 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.db.db import SessionLocal
+from app.db.db import get_db
 from app.models.models import Medico, Asignacion, Formulario, RespuestaFormulario, Mensaje
 from app.schemas.schemas import MedicoOut, FormularioCreate, FormularioOut, RespuestaFormularioOut, MensajeOut
 from typing import List
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.get("/{id}/pacientes", response_model=List[MedicoOut])
 def get_pacientes_asignados(id: int, db: Session = Depends(get_db)):

@@ -1,19 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from app.db.db import SessionLocal
+from app.db.db import get_db
 from app.models.models import Hospital
 from app.schemas.schemas import HospitalOut
 from typing import List
 import csv, io
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.get("/nearby", response_model=List[HospitalOut])
 def get_hospitales_cercanos(lat: float = Query(...), lon: float = Query(...), radio: float = Query(5.0), db: Session = Depends(get_db)):
