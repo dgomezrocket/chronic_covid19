@@ -21,11 +21,19 @@ router = APIRouter()
 def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):
     """Registra un nuevo paciente en el sistema"""
     # Verificar si el email ya existe
-    existing = db.query(Paciente).filter(Paciente.email == paciente.email).first()
-    if existing:
+    existing_email = db.query(Paciente).filter(Paciente.email == paciente.email).first()
+    if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email ya registrado"
+            detail="El email ya está registrado"
+        )
+
+    # Verificar si el documento ya existe
+    existing_doc = db.query(Paciente).filter(Paciente.documento == paciente.documento).first()
+    if existing_doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El documento de identidad ya está registrado"
         )
 
     # Crear nuevo paciente
@@ -47,9 +55,14 @@ def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nuevo_paciente)
 
-    # Crear token
+    # Crear token con nombre y email incluidos
     access_token = create_access_token(
-        data={"sub": str(nuevo_paciente.id), "rol": nuevo_paciente.rol.value}
+        data={
+            "sub": str(nuevo_paciente.id),
+            "rol": nuevo_paciente.rol.value,
+            "email": nuevo_paciente.email,
+            "nombre": nuevo_paciente.nombre
+        }
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -58,11 +71,19 @@ def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):
 def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
     """Registra un nuevo médico en el sistema (puede requerir admin)"""
     # Verificar si el email ya existe
-    existing = db.query(Medico).filter(Medico.email == medico.email).first()
-    if existing:
+    existing_email = db.query(Medico).filter(Medico.email == medico.email).first()
+    if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email ya registrado"
+            detail="El email ya está registrado"
+        )
+
+    # Verificar si el documento ya existe
+    existing_doc = db.query(Medico).filter(Medico.documento == medico.documento).first()
+    if existing_doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El documento de identidad ya está registrado"
         )
 
     # Crear nuevo médico
@@ -80,9 +101,14 @@ def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nuevo_medico)
 
-    # Crear token
+    # Crear token con nombre y email incluidos
     access_token = create_access_token(
-        data={"sub": str(nuevo_medico.id), "rol": nuevo_medico.rol.value}
+        data={
+            "sub": str(nuevo_medico.id),
+            "rol": nuevo_medico.rol.value,
+            "email": nuevo_medico.email,
+            "nombre": nuevo_medico.nombre
+        }
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -91,11 +117,19 @@ def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
 def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(get_db)):
     """Registra un nuevo coordinador en el sistema (solo admin)"""
     # Verificar si el email ya existe
-    existing = db.query(Coordinador).filter(Coordinador.email == coordinador.email).first()
-    if existing:
+    existing_email = db.query(Coordinador).filter(Coordinador.email == coordinador.email).first()
+    if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email ya registrado"
+            detail="El email ya está registrado"
+        )
+
+    # Verificar si el documento ya existe
+    existing_doc = db.query(Coordinador).filter(Coordinador.documento == coordinador.documento).first()
+    if existing_doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El documento de identidad ya está registrado"
         )
 
     # Crear nuevo coordinador
@@ -112,9 +146,14 @@ def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(g
     db.commit()
     db.refresh(nuevo_coordinador)
 
-    # Crear token
+    # Crear token con nombre y email incluidos
     access_token = create_access_token(
-        data={"sub": str(nuevo_coordinador.id), "rol": nuevo_coordinador.rol.value}
+        data={
+            "sub": str(nuevo_coordinador.id),
+            "rol": nuevo_coordinador.rol.value,
+            "email": nuevo_coordinador.email,
+            "nombre": nuevo_coordinador.nombre
+        }
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -153,9 +192,14 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Crear token
+    # Crear token con nombre y email incluidos
     access_token = create_access_token(
-        data={"sub": str(user.id), "rol": user.rol.value}
+        data={
+            "sub": str(user.id),
+            "rol": user.rol.value,
+            "email": user.email,
+            "nombre": user.nombre
+        }
     )
     return {"access_token": access_token, "token_type": "bearer"}
 

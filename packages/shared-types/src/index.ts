@@ -7,8 +7,7 @@ export enum RolEnum {
 
 export enum GeneroEnum {
   MASCULINO = "masculino",
-  FEMENINO = "femenino",
-  OTRO = "otro"
+  FEMENINO = "femenino"
 }
 
 // User types

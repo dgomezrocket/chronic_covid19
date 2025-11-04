@@ -39,9 +39,12 @@ class PacienteBase(BaseModel):
 class PacienteCreate(PacienteBase):
     password: str
 
-
 class PacienteUpdate(BaseModel):
     nombre: Optional[str] = None
+    email: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    genero: Optional[GeneroEnum] = None
+    documento: Optional[str] = None
     direccion: Optional[str] = None
     telefono: Optional[str] = None
     latitud: Optional[float] = None

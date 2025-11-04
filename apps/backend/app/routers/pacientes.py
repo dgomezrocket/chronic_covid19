@@ -21,8 +21,11 @@ def update_paciente(id: int, paciente_update: PacienteUpdate, db: Session = Depe
     paciente = db.query(Paciente).filter(Paciente.id == id).first()
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Actualizar solo los campos proporcionados
     for key, value in paciente_update.dict(exclude_unset=True).items():
         setattr(paciente, key, value)
+    
     db.commit()
     db.refresh(paciente)
     return paciente

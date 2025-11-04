@@ -16,10 +16,10 @@ export class ApiClient {
 
   constructor(baseURL?: string) {
     // Usar variable de entorno si está disponible, sino default
-    const API_URL = baseURL || 
-                    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 
+    const API_URL = baseURL ||
+                    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
                     'http://localhost:8000';
-    
+
     this.client = axios.create({
       baseURL: API_URL,
       headers: {
@@ -76,7 +76,8 @@ export class ApiClient {
     return this.token;
   }
 
-  // Auth endpoints
+  // ========== AUTH ENDPOINTS ==========
+
   async login(credentials: LoginCredentials): Promise<TokenResponse> {
     try {
       const formData = new URLSearchParams();
@@ -121,7 +122,17 @@ export class ApiClient {
     }
   }
 
-  // Paciente endpoints
+  async getMe(): Promise<any> {
+    try {
+      const response = await this.client.get('/auth/me');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== PACIENTE ENDPOINTS ==========
+
   async getPaciente(id: number): Promise<Paciente> {
     try {
       const response = await this.client.get<Paciente>(`/pacientes/${id}`);
@@ -140,10 +151,20 @@ export class ApiClient {
     }
   }
 
-  // Medico endpoints
+  // ========== MEDICO ENDPOINTS ==========
+
   async getMedico(id: number): Promise<Medico> {
     try {
       const response = await this.client.get<Medico>(`/medicos/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async updateMedico(id: number, data: Partial<Medico>): Promise<Medico> {
+    try {
+      const response = await this.client.put<Medico>(`/medicos/${id}`, data);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -159,12 +180,12 @@ export class ApiClient {
     }
   }
 
-  // Error handling
+  // ========== ERROR HANDLING ==========
+
   private handleError(error: unknown): Error {
     if (axios.isAxiosError(error)) {
       const axiosError = error as AxiosError<ApiError>;
-      
-      // Si no hay respuesta del servidor
+
       if (!axiosError.response) {
         if (axiosError.code === 'ECONNREFUSED') {
           return new Error('No se puede conectar al servidor. Verifica que el backend esté corriendo en http://localhost:8000');
@@ -174,12 +195,11 @@ export class ApiClient {
         }
         return new Error(`Error de conexión: ${axiosError.message}`);
       }
-      
-      // Si hay respuesta con error del servidor
+
       if (axiosError.response?.data?.detail) {
         return new Error(axiosError.response.data.detail);
       }
-      
+
       return new Error(axiosError.message);
     }
     return error instanceof Error ? error : new Error('Error desconocido');
