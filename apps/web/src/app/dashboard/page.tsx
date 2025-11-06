@@ -108,22 +108,22 @@ export default function DashboardPage() {
               </div>
             </Link>
 
-            <div className="flex items-center space-x-4">
-              <div className="hidden sm:flex items-center space-x-3 bg-gray-50 rounded-xl px-4 py-2 border border-gray-200">
-                <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-green-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
+              <div className="flex items-center space-x-4">
+                  <div className="hidden sm:flex items-center space-x-3 bg-gray-50 rounded-xl px-4 py-2 border border-gray-200">
+                    <Link href="/dashboard/profile" className="flex items-center space-x-2 hover:bg-gray-100 transition-colors rounded-lg p-1">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-green-500 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors">{user.nombre}</p>
+                        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${getRoleBadgeColor(user.rol)}`}>
+                          {getRoleText(user.rol)}
+                        </span>
+                      </div>
+                    </Link>
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold text-gray-900">{user.nombre}</p>
-                    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${getRoleBadgeColor(user.rol)}`}>
-                      {getRoleText(user.rol)}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
               <button
                 onClick={handleLogout}
