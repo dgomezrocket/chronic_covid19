@@ -2,7 +2,8 @@
 export enum RolEnum {
   PACIENTE = "paciente",
   MEDICO = "medico",
-  COORDINADOR = "coordinador"
+  COORDINADOR = "coordinador",
+  ADMIN = "admin"
 }
 
 export enum GeneroEnum {
@@ -10,7 +11,27 @@ export enum GeneroEnum {
   FEMENINO = "femenino"
 }
 
-// User types
+// ========== ESPECIALIDAD ==========
+export interface Especialidad {
+  id: number;
+  nombre: string;
+  descripcion?: string;
+  activa: number;
+}
+
+// ========== HOSPITAL ==========
+export interface Hospital {
+  id: number;
+  nombre: string;
+  codigo?: string;
+  departamento?: string;  // CAMBIO: provincia -> departamento
+  ciudad?: string;        // CAMBIO: distrito -> ciudad
+  barrio?: string;        // NUEVO: barrio/compañía/localidad
+  latitud?: number;
+  longitud?: number;
+}
+
+// ========== USER TYPES ==========
 export interface Usuario {
   id: number;
   email: string;
@@ -30,16 +51,18 @@ export interface Paciente extends Usuario {
 
 export interface Medico extends Usuario {
   documento: string;
-  especialidad?: string;
-  hospital_id?: number;
+  telefono?: string;
+  especialidades: Especialidad[];
+  hospitales: Hospital[];  // Array de objetos Hospital completos
 }
 
 export interface Coordinador extends Usuario {
   documento: string;
   hospital_id?: number;
+  hospital?: Hospital;
 }
 
-// Auth types
+// ========== AUTH TYPES ==========
 export interface LoginCredentials {
   username: string; // email
   password: string;
@@ -62,9 +85,10 @@ export interface RegisterMedicoData {
   documento: string;
   nombre: string;
   email: string;
+  telefono?: string;
   password: string;
-  especialidad?: string;
-  hospital_id?: number;
+  especialidad_ids?: number[];
+  hospital_ids?: number[];
 }
 
 export interface TokenResponse {
@@ -78,7 +102,7 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
-// API Response types
+// ========== API RESPONSE TYPES ==========
 export interface ApiError {
   detail: string;
 }
@@ -87,4 +111,39 @@ export interface ApiResponse<T> {
   data?: T;
   error?: ApiError;
   success: boolean;
+}
+
+// ========== MENSAJE ==========
+export interface Mensaje {
+  id: number;
+  contenido: string;
+  paciente_id: number;
+  medico_id: number;
+  timestamp: string;
+  leido: number;
+}
+
+// ========== FORMULARIO ==========
+export interface Formulario {
+  id: number;
+  tipo: string;
+  preguntas: Record<string, any>;
+  creador_id?: number;
+  fecha_creacion: string;
+}
+
+export interface RespuestaFormulario {
+  id: number;
+  paciente_id: number;
+  formulario_id: number;
+  respuestas: Record<string, any>;
+  timestamp: string;
+}
+
+// ========== ASIGNACION ==========
+export interface Asignacion {
+  id: number;
+  paciente_id: number;
+  medico_id: number;
+  fecha_asignacion: string;
 }

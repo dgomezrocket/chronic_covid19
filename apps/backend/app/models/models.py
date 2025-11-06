@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text
+from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table
 from sqlalchemy.orm import relationship
 from app.db.db import Base
 from datetime import datetime
@@ -18,6 +18,25 @@ class GeneroEnum(enum.Enum):
     masculino = "masculino"
     femenino = "femenino"
     otro = "otro"
+
+
+# ========== TABLAS DE ASOCIACIÓN (Many-to-Many) ==========
+
+# Tabla intermedia: Médico <-> Hospital
+medico_hospital = Table(
+    'medico_hospital',
+    Base.metadata,
+    Column('medico_id', Integer, ForeignKey('medicos.id'), primary_key=True),
+    Column('hospital_id', Integer, ForeignKey('hospitales.id'), primary_key=True)
+)
+
+# Tabla intermedia: Médico <-> Especialidad
+medico_especialidad = Table(
+    'medico_especialidad',
+    Base.metadata,
+    Column('medico_id', Integer, ForeignKey('medicos.id'), primary_key=True),
+    Column('especialidad_id', Integer, ForeignKey('especialidades.id'), primary_key=True)
+)
 
 
 # ========== MODELOS ==========
@@ -44,6 +63,18 @@ class Paciente(Base):
     asignaciones = relationship("Asignacion", back_populates="paciente")
 
 
+class Especialidad(Base):
+    __tablename__ = "especialidades"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, unique=True, nullable=False, index=True)
+    descripcion = Column(String, nullable=True)
+    activa = Column(Integer, default=1, nullable=False)  # 0 = inactiva, 1 = activa
+
+    # Relación many-to-many con Medico
+    medicos = relationship("Medico", secondary=medico_especialidad, back_populates="especialidades")
+
+
 class Medico(Base):
     __tablename__ = "medicos"
 
@@ -51,13 +82,15 @@ class Medico(Base):
     documento = Column(String, unique=True, index=True, nullable=False)
     nombre = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    telefono = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
-    especialidad = Column(String, nullable=True)
-    hospital_id = Column(Integer, ForeignKey("hospitales.id"), nullable=True)
     rol = Column(Enum(RolEnum), default=RolEnum.medico, nullable=False)
 
-    # Relaciones
-    hospital = relationship("Hospital", back_populates="medicos")
+    # Relaciones Many-to-Many
+    especialidades = relationship("Especialidad", secondary=medico_especialidad, back_populates="medicos")
+    hospitales = relationship("Hospital", secondary=medico_hospital, back_populates="medicos")
+
+    # Relaciones existentes
     mensajes = relationship("Mensaje", back_populates="medico")
     asignaciones = relationship("Asignacion", back_populates="medico")
     formularios_creados = relationship("Formulario", back_populates="creador")
@@ -84,13 +117,14 @@ class Hospital(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, nullable=False)
     codigo = Column(String, unique=True, nullable=True)
-    distrito = Column(String, nullable=True)
-    provincia = Column(String, nullable=True)
+    departamento = Column(String, nullable=True)
+    ciudad = Column(String, nullable=True)
+    barrio = Column(String, nullable=True)
     latitud = Column(Float, nullable=True)
     longitud = Column(Float, nullable=True)
 
     # Relaciones
-    medicos = relationship("Medico", back_populates="hospital")
+    medicos = relationship("Medico", secondary=medico_hospital, back_populates="hospitales")
     coordinadores = relationship("Coordinador", back_populates="hospital")
 
 

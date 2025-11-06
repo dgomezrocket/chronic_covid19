@@ -196,13 +196,25 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <p className="text-center text-sm text-gray-600">
-                ¿No tienes una cuenta?{' '}
-                <Link href="/register" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
-                  Regístrate aquí
-                </Link>
+            {/* Link de registro - ACTUALIZAR ESTA SECCIÓN */}
+            <div className="text-center pt-4 border-t">
+              <p className="text-sm text-gray-600 mb-3">
+                ¿No tienes una cuenta?
               </p>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <Link
+                  href="/register"
+                  className="inline-flex items-center justify-center px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-semibold hover:bg-blue-100 transition-colors"
+                >
+                  <span>🧑‍🦱 Registrarme como Paciente</span>
+                </Link>
+                <Link
+                  href="/register/medico"
+                  className="inline-flex items-center justify-center px-4 py-2 bg-green-50 text-green-600 rounded-xl font-semibold hover:bg-green-100 transition-colors"
+                >
+                  <span>🩺 Registrarme como Médico</span>
+                </Link>
+              </div>
             </div>
           </div>
 

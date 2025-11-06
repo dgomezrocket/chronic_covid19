@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.db import get_db
-from app.models.models import Paciente, Medico, Coordinador, RolEnum
+from app.models.models import Paciente, Medico, Coordinador, Hospital, RolEnum  # Agregar Hospital aquí
 from app.schemas.schemas import (
     PacienteCreate, MedicoCreate, CoordinadorCreate,
     Token, UserInfo
@@ -69,10 +69,20 @@ def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):
 
 @router.post("/register/medico", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
-    """Registra un nuevo médico en el sistema (puede requerir admin)"""
-    # Verificar si el email ya existe
+    """Registra un nuevo médico en el sistema"""
+    from app.models.models import Especialidad
+
+    # Verificar si el email ya existe en médicos
     existing_email = db.query(Medico).filter(Medico.email == medico.email).first()
     if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado"
+        )
+
+    # Verificar si el email ya existe en pacientes
+    existing_email_paciente = db.query(Paciente).filter(Paciente.email == medico.email).first()
+    if existing_email_paciente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El email ya está registrado"
@@ -86,22 +96,60 @@ def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
             detail="El documento de identidad ya está registrado"
         )
 
+    # Verificar que las especialidades existan
+    especialidades = []
+    if medico.especialidad_ids:
+        for esp_id in medico.especialidad_ids:
+            especialidad = db.query(Especialidad).filter(
+                Especialidad.id == esp_id,
+                Especialidad.activa == 1
+            ).first()
+            if not especialidad:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Especialidad con ID {esp_id} no encontrada o inactiva"
+                )
+            especialidades.append(especialidad)
+
+    # Verificar que los hospitales existan
+    hospitales = []
+    if medico.hospital_ids:
+        for hospital_id in medico.hospital_ids:
+            hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
+            if not hospital:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Hospital con ID {hospital_id} no encontrado"
+                )
+            hospitales.append(hospital)
+
     # Crear nuevo médico
     hashed_password = get_password_hash(medico.password)
     nuevo_medico = Medico(
         documento=medico.documento,
         nombre=medico.nombre,
         email=medico.email,
+        telefono=medico.telefono,
         hashed_password=hashed_password,
-        especialidad=medico.especialidad,
-        hospital_id=medico.hospital_id,
         rol=RolEnum.medico
     )
+
+    # Agregar el médico a la sesión PRIMERO
     db.add(nuevo_medico)
+
+    # Flush para obtener el ID antes de asociar relaciones
+    db.flush()
+
+    # Asociar especialidades y hospitales
+    if especialidades:
+        nuevo_medico.especialidades = especialidades
+    if hospitales:
+        nuevo_medico.hospitales = hospitales
+
     db.commit()
     db.refresh(nuevo_medico)
 
-    # Crear token con nombre y email incluidos
+    # Crear token
     access_token = create_access_token(
         data={
             "sub": str(nuevo_medico.id),

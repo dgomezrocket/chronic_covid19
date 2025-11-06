@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { GeneroEnum } from '@chronic-covid19/shared-types';
 
-// Login Schema
+// ========== LOGIN SCHEMA ==========
 export const loginSchema = z.object({
   username: z.string().email('Email inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
@@ -9,7 +9,7 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
-// Register Paciente Schema
+// ========== REGISTER PACIENTE SCHEMA ==========
 export const registerPacienteSchema = z.object({
   documento: z.string().min(1, 'El documento es requerido'),
   nombre: z.string().min(1, 'El nombre es requerido'),
@@ -27,19 +27,20 @@ export const registerPacienteSchema = z.object({
 
 export type RegisterPacienteFormData = z.infer<typeof registerPacienteSchema>;
 
-// Register Medico Schema
+// ========== REGISTER MEDICO SCHEMA ==========
 export const registerMedicoSchema = z.object({
   documento: z.string().min(1, 'El documento es requerido'),
   nombre: z.string().min(1, 'El nombre es requerido'),
   email: z.string().email('Email inválido'),
+  telefono: z.string().optional(),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  especialidad: z.string().optional(),
-  hospital_id: z.number().optional(),
+  especialidad_ids: z.array(z.number()).optional().default([]), // Array de IDs (números)
+  hospital_ids: z.array(z.number()).optional().default([]),
 });
 
 export type RegisterMedicoFormData = z.infer<typeof registerMedicoSchema>;
 
-// Update Paciente Schema
+// ========== UPDATE PACIENTE SCHEMA ==========
 export const updatePacienteSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
   fecha_nacimiento: z.string().optional(),
@@ -55,13 +56,13 @@ export const updatePacienteSchema = z.object({
 
 export type UpdatePacienteFormData = z.infer<typeof updatePacienteSchema>;
 
-// Update Medico Schema
+// ========== UPDATE MEDICO SCHEMA ==========
 export const updateMedicoSchema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
   email: z.string().email('Email inválido').optional(),
-  especialidad: z.string().optional(),
+  especialidad_ids: z.array(z.number()).optional(),
   telefono: z.string().optional(),
+  hospital_ids: z.array(z.number()).optional(),
 });
 
 export type UpdateMedicoFormData = z.infer<typeof updateMedicoSchema>;
-

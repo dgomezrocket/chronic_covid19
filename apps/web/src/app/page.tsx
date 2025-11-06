@@ -45,7 +45,7 @@ export default function Home() {
               Acceder al Sistema
             </Link>
             <Link href="/register" className="btn-outline text-lg px-8 py-4">
-              Registrarse como Paciente
+              Registrarse
             </Link>
           </div>
         </div>

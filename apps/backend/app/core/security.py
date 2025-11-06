@@ -57,10 +57,10 @@ def decode_token(token: str) -> Optional[dict]:
 def get_current_user(
         token: str = Depends(oauth2_scheme),
         db: Session = Depends(get_db)
-) -> Union[Paciente, Medico, Coordinador]:
+) -> dict:
     """
     Obtiene el usuario actual desde el token JWT.
-    Retorna el objeto usuario (Paciente, Medico o Coordinador).
+    Devuelve un diccionario con la información del usuario.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -68,33 +68,27 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(token)
-    if payload is None:
-        raise credentials_exception
-
-    user_id: str = payload.get("sub")
-    rol: str = payload.get("rol")
-
-    if user_id is None or rol is None:
-        raise credentials_exception
-
-    # Buscar usuario según el rol
-    user = None
     try:
-        user_id_int = int(user_id)
-        if rol == "paciente":
-            user = db.query(Paciente).filter(Paciente.id == user_id_int).first()
-        elif rol == "medico":
-            user = db.query(Medico).filter(Medico.id == user_id_int).first()
-        elif rol == "coordinador":
-            user = db.query(Coordinador).filter(Coordinador.id == user_id_int).first()
-    except (ValueError, TypeError):
-        raise credentials_exception
+        # Decodificar el token JWT
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        rol: str = payload.get("rol")
+        email: str = payload.get("email")
+        nombre: str = payload.get("nombre")
 
-    if user is None:
-        raise credentials_exception
+        if user_id is None:
+            raise credentials_exception
 
-    return user
+        # ✅ DEVOLVER UN DICCIONARIO EN LUGAR DE BUSCAR EN LA BD
+        return {
+            "user_id": int(user_id),
+            "rol": rol,
+            "email": email,
+            "nombre": nombre
+        }
+
+    except JWTError:
+        raise credentials_exception
 
 
 def get_current_active_user(

@@ -48,6 +48,8 @@ export default function ProfilePage() {
           console.log('🩺 Obteniendo datos completos del médico con ID:', user.id);
           const medicoData = await apiClient.getMedico(user.id);
           console.log('✅ Datos del médico recibidos:', medicoData);
+          console.log('📌 Especialidades:', medicoData.especialidades);
+          console.log('🏥 Hospitales:', medicoData.hospitales);
           setProfileData(medicoData);
         } else {
           // Para coordinadores u otros roles, solo info básica
@@ -315,16 +317,128 @@ export default function ProfilePage() {
                     <p className="text-gray-900 text-base">{profileData.direccion}</p>
                   </div>
                 )}
-
-                {profileData?.especialidad && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Especialidad</label>
-                    <p className="text-gray-900 text-base">{profileData.especialidad}</p>
-                  </div>
-                )}
               </div>
 
-              {profileData?.latitud && profileData?.longitud && (
+              {/* Especialidades (solo para médicos) */}
+              {user.rol === RolEnum.MEDICO && profileData?.especialidades && profileData.especialidades.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Especialidades Médicas</span>
+                  </h4>
+
+                  <div className="flex flex-wrap gap-2">
+                    {profileData.especialidades.map((especialidad: any) => (
+                      <div
+                        key={especialidad.id}
+                        className="inline-flex items-center px-4 py-2 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium text-sm"
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        {especialidad.nombre}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hospitales vinculados (solo para médicos) */}
+              {user.rol === RolEnum.MEDICO && (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    <span>Hospitales Vinculados</span>
+                  </h4>
+
+                  {profileData?.hospitales && profileData.hospitales.length > 0 ? (
+                    <div className="space-y-3">
+                      {profileData.hospitales.map((hospital: any) => (
+                        <div
+                          key={hospital.id}
+                          className="bg-purple-50 border border-purple-200 rounded-xl p-4"
+                        >
+                          <div className="flex items-start space-x-3">
+                            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                              </svg>
+                            </div>
+                            <div className="flex-1">
+                              <h5 className="font-semibold text-purple-900 text-base mb-1">
+                                {hospital.nombre}
+                              </h5>
+
+                              <div className="space-y-1 text-sm text-purple-700">
+                                {hospital.codigo && (
+                                  <p className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                                    </svg>
+                                    <span>Código: {hospital.codigo}</span>
+                                  </p>
+                                )}
+
+                                {(hospital.departamento || hospital.ciudad || hospital.barrio) && (
+                                  <p className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    <span>
+                                      {[hospital.barrio, hospital.ciudad, hospital.departamento]
+                                        .filter(Boolean)
+                                        .join(', ')}
+                                    </span>
+                                  </p>
+                                )}
+
+                                {hospital.latitud && hospital.longitud && (
+                                  <p className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                    <span className="text-xs">
+                                      GPS: {hospital.latitud.toFixed(4)}°, {hospital.longitud.toFixed(4)}°
+                                    </span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      <p className="text-sm text-gray-600 font-semibold">No hay hospitales vinculados actualmente</p>
+                      <p className="text-xs text-gray-500 mt-1">Serás asignado a un hospital más adelante por el coordinador</p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                    <div className="flex items-start space-x-2">
+                      <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-blue-800">
+                        <strong>Nota:</strong> La vinculación a hospitales es gestionada por los coordinadores del sistema.
+                        Si necesitas actualizar esta información, contacta al administrador.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Ubicación de Residencia (solo para pacientes) */}
+              {user.rol === RolEnum.PACIENTE && profileData?.latitud && profileData?.longitud && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
                   <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
                     <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

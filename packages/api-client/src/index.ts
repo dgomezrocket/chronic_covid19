@@ -7,7 +7,8 @@ import {
   Paciente,
   Medico,
   ApiError,
-  RolEnum
+  Especialidad,
+  Hospital
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -15,7 +16,6 @@ export class ApiClient {
   private token: string | null = null;
 
   constructor(baseURL?: string) {
-    // Usar variable de entorno si está disponible, sino default
     const API_URL = baseURL ||
                     (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
                     'http://localhost:8000';
@@ -25,10 +25,9 @@ export class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 10000, // 10 segundos timeout
+      timeout: 10000,
     });
 
-    // Interceptor para agregar token a las peticiones
     this.client.interceptors.request.use((config) => {
       if (this.token) {
         config.headers.Authorization = `Bearer ${this.token}`;
@@ -36,7 +35,6 @@ export class ApiClient {
       return config;
     });
 
-    // Interceptor para debug
     this.client.interceptors.request.use(
       (config) => {
         console.log('🚀 Request:', config.method?.toUpperCase(), config.url);
@@ -113,11 +111,14 @@ export class ApiClient {
     }
   }
 
-  async registerMedico(data: RegisterMedicoData): Promise<Medico> {
+  async registerMedico(data: RegisterMedicoData): Promise<TokenResponse> {
     try {
-      const response = await this.client.post<Medico>('/medicos/', data);
+      console.log('📤 Registering medico:', data);
+      const response = await this.client.post<TokenResponse>('/auth/register/medico', data);
+      this.setToken(response.data.access_token);
       return response.data;
     } catch (error) {
+      console.error('Registration error:', error);
       throw this.handleError(error);
     }
   }
@@ -174,6 +175,46 @@ export class ApiClient {
   async getAllMedicos(): Promise<Medico[]> {
     try {
       const response = await this.client.get<Medico[]>('/medicos/');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== ESPECIALIDADES ENDPOINTS ==========
+
+  async getAllEspecialidades(requireAuth: boolean = false): Promise<Especialidad[]> {
+    try {
+      const response = await this.client.get<Especialidad[]>('/especialidades/');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== HOSPITALES ENDPOINTS ==========
+
+  async getAllHospitales(): Promise<Hospital[]> {
+    try {
+      const response = await this.client.get<Hospital[]>('/hospitales/');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getHospitalById(id: number): Promise<Hospital> {
+    try {
+      const response = await this.client.get<Hospital>(`/hospitales/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getHospitalesCercanos(lat: number, lon: number, radio: number = 5.0): Promise<Hospital[]> {
+    try {
+      const response = await this.client.get<Hospital[]>(`/hospitales/nearby?lat=${lat}&lon=${lon}&radio=${radio}`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);

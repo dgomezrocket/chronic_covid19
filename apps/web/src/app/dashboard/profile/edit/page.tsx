@@ -8,8 +8,13 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useAuthStore } from '@/store/authStore';
 import { apiClient } from '@chronic-covid19/api-client';
-import { updatePacienteSchema, UpdatePacienteFormData } from '@chronic-covid19/api-client/dist/validation';
-import { RolEnum, GeneroEnum } from '@chronic-covid19/shared-types';
+import {
+  updatePacienteSchema,
+  UpdatePacienteFormData,
+  updateMedicoSchema,
+  UpdateMedicoFormData
+} from '@chronic-covid19/api-client/dist/validation';
+import { RolEnum, GeneroEnum, Especialidad } from '@chronic-covid19/shared-types';
 
 // Importar LocationPicker de forma dinámica (no SSR)
 const LocationPicker = dynamic(() => import('@/components/LocationPicker'), {
@@ -27,15 +32,56 @@ export default function EditProfilePage() {
   const [success, setSuccess] = useState('');
   const [location, setLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
 
+  // Estado para especialidades (médicos)
+  const [especialidadesDisponibles, setEspecialidadesDisponibles] = useState<Especialidad[]>([]);
+  const [especialidadesSeleccionadas, setEspecialidadesSeleccionadas] = useState<number[]>([]);
+  const [loadingEspecialidades, setLoadingEspecialidades] = useState(false);
+
+    // ✅ USAR EL SCHEMA CORRECTO SEGÚN EL ROL
+  const isPaciente = user?.rol === RolEnum.PACIENTE;
+  const schema = isPaciente ? updatePacienteSchema : updateMedicoSchema;
+  type FormData = typeof isPaciente extends true ? UpdatePacienteFormData : UpdateMedicoFormData;
+
   const {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
     reset,
-  } = useForm<UpdatePacienteFormData>({
-    resolver: zodResolver(updatePacienteSchema),
+  } = useForm<any>({
+    resolver: zodResolver(schema),
   });
+
+  const watchedFields = watch();
+  // Log de debug cuando cambian los errores
+useEffect(() => {
+  if (Object.keys(errors).length > 0) {
+    console.log('⚠️ Errores de validación:', errors);
+  }
+}, [errors]);
+
+
+  // Cargar especialidades disponibles (solo para médicos)
+  useEffect(() => {
+    const loadEspecialidades = async () => {
+      if (user?.rol === RolEnum.MEDICO && token) {
+        try {
+          setLoadingEspecialidades(true);
+          apiClient.setToken(token);
+          const especialidades = await apiClient.getAllEspecialidades();
+          console.log('🩺 Especialidades disponibles:', especialidades);
+          setEspecialidadesDisponibles(especialidades);
+        } catch (err) {
+          console.error('❌ Error al cargar especialidades:', err);
+        } finally {
+          setLoadingEspecialidades(false);
+        }
+      }
+    };
+
+    loadEspecialidades();
+  }, [user, token]);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -55,12 +101,19 @@ export default function EditProfilePage() {
             data = await apiClient.getPaciente(user.id);
           } else if (user.rol === RolEnum.MEDICO) {
             data = await apiClient.getMedico(user.id);
+
+            // Cargar especialidades del médico
+            if (data.especialidades && data.especialidades.length > 0) {
+              const especialidadIds = data.especialidades.map((esp: any) => esp.id);
+              console.log('🩺 Especialidades actuales del médico:', especialidadIds);
+              setEspecialidadesSeleccionadas(especialidadIds);
+            }
           } else {
             data = await apiClient.getMe();
           }
 
           setProfileData(data);
-          
+
           // Pre-llenar el formulario con los datos actuales
           reset({
             nombre: data.nombre || '',
@@ -102,22 +155,32 @@ export default function EditProfilePage() {
     setValue('direccion', address);
   };
 
+  const handleEspecialidadToggle = (especialidadId: number) => {
+    setEspecialidadesSeleccionadas(prev => {
+      if (prev.includes(especialidadId)) {
+        return prev.filter(id => id !== especialidadId);
+      } else {
+        return [...prev, especialidadId];
+      }
+    });
+  };
+
   const onSubmit = async (data: UpdatePacienteFormData) => {
-  if (!user) return;
+        console.log('🟢 ========== onSubmit EJECUTADO ==========');
+        console.log('📤 Datos del formulario:', data);
+   if (!user) {
+    console.log('❌ No hay usuario');
+    return;
+  }
 
   setSaving(true);
   setError('');
   setSuccess('');
 
   try {
-    console.log('📤 Enviando datos de actualización:', data);
-
-    // Agregar coordenadas (usar las existentes si no se cambió la ubicación)
-    const updateData = {
-      ...data,
-      latitud: location?.lat || profileData?.latitud,
-      longitud: location?.lng || profileData?.longitud,
-    };
+        console.log('👤 Usuario:', user);
+        console.log('🔑 Token existe:', !!token);
+        console.log('📤 Datos del formulario:', data);
 
     if (token) {
       apiClient.setToken(token);
@@ -125,24 +188,57 @@ export default function EditProfilePage() {
 
     // Actualizar según el rol
     if (user.rol === RolEnum.PACIENTE) {
+      // Para pacientes: agregar coordenadas
+      const updateData = {
+        ...data,
+        latitud: location?.lat || profileData?.latitud,
+        longitud: location?.lng || profileData?.longitud,
+      };
+
+      console.log('📤 Enviando actualización de PACIENTE:', updateData);
       const response = await apiClient.updatePaciente(user.id, updateData);
-      console.log('✅ Respuesta del servidor:', response);
+      console.log('✅ Respuesta del servidor (Paciente):', response);
+
     } else if (user.rol === RolEnum.MEDICO) {
+      // Para médicos: solo datos básicos + especialidades (SIN coordenadas)
+      const updateData: any = {
+        nombre: data.nombre,
+        email: data.email,
+        telefono: data.telefono,
+        especialidad_ids: especialidadesSeleccionadas
+      };
+
+      console.log('📤 Enviando actualización de MÉDICO:', updateData);
+      console.log('🩺 Especialidades seleccionadas:', especialidadesSeleccionadas);
+
       const response = await apiClient.updateMedico(user.id, updateData);
-      console.log('✅ Respuesta del servidor:', response);
+      console.log('✅ Respuesta del servidor (Médico):', response);
     }
 
     setSuccess('✅ Perfil actualizado correctamente. Redirigiendo...');
 
-    // Redirigir con parámetro de actualización después de 1 segundo
+    // Redirigir con parámetro de actualización después de 1.5 segundos
     setTimeout(() => {
       router.push('/dashboard/profile?updated=true');
-    }, 1000);
-  } catch (err) {
-    console.error('❌ Error al actualizar perfil:', err);
-    setError(err instanceof Error ? err.message : 'Error al actualizar perfil');
+    }, 1500);
+
+  } catch (err: any) {
+    console.error('❌ Error completo:', err);
+    console.error('❌ Error response:', err?.response);
+    console.error('❌ Error data:', err?.response?.data);
+
+    let errorMessage = 'Error al actualizar perfil';
+
+    if (err?.response?.data?.detail) {
+      errorMessage = err.response.data.detail;
+    } else if (err instanceof Error) {
+      errorMessage = err.message;
+    }
+
+    setError(errorMessage);
   } finally {
     setSaving(false);
+    console.log('🟢 ========== onSubmit FINALIZADO ==========');
   }
 };
 
@@ -201,6 +297,7 @@ export default function EditProfilePage() {
               <div>
                 <span className="block text-lg font-bold text-gray-900">PINV20-292</span>
                 <span className="block text-xs text-gray-500">Editar Perfil</span>
+
               </div>
             </Link>
 
@@ -264,7 +361,10 @@ export default function EditProfilePage() {
                 <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-sm text-red-800">{error}</p>
+                <div className="flex-1">
+                  <p className="text-sm text-red-800 font-semibold">Error al guardar</p>
+                  <p className="text-sm text-red-700 mt-1">{error}</p>
+                </div>
               </div>
             )}
 
@@ -299,7 +399,7 @@ export default function EditProfilePage() {
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        <span>{errors.nombre.message}</span>
+                        <span>{String(errors.nombre.message)}</span>
                       </p>
                     )}
                   </div>
@@ -319,7 +419,7 @@ export default function EditProfilePage() {
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        <span>{errors.email.message}</span>
+                        <span>{String(errors.email.message)}</span>
                       </p>
                     )}
                   </div>
@@ -367,6 +467,130 @@ export default function EditProfilePage() {
                 </div>
               </div>
 
+              {/* Especialidades (solo para médicos) */}
+              {user.rol === RolEnum.MEDICO && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900 border-b pb-2 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Especialidades Médicas</span>
+                  </h3>
+
+                  {loadingEspecialidades ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+                      <p className="mt-2 text-sm text-gray-600">Cargando especialidades...</p>
+                    </div>
+                  ) : especialidadesDisponibles.length > 0 ? (
+                    <>
+                      <p className="text-sm text-gray-600">
+                        Selecciona las especialidades médicas en las que ejerces:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto p-1">
+                        {especialidadesDisponibles.map((especialidad) => (
+                          <label
+                            key={especialidad.id}
+                            className={`flex items-center space-x-3 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+                              especialidadesSeleccionadas.includes(especialidad.id)
+                                ? 'border-green-500 bg-green-50'
+                                : 'border-gray-200 bg-white hover:border-green-300 hover:bg-green-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={especialidadesSeleccionadas.includes(especialidad.id)}
+                              onChange={() => handleEspecialidadToggle(especialidad.id)}
+                              className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                            />
+                            <div className="flex-1">
+                              <p className="font-semibold text-gray-900 text-sm">
+                                {especialidad.nombre}
+                              </p>
+                              {especialidad.descripcion && (
+                                <p className="text-xs text-gray-600 mt-0.5">
+                                  {especialidad.descripcion}
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                        <p className="text-sm text-green-800">
+                          <strong>{especialidadesSeleccionadas.length}</strong> especialidad{especialidadesSeleccionadas.length !== 1 ? 'es' : ''} seleccionada{especialidadesSeleccionadas.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-sm text-gray-600 font-semibold">No hay especialidades disponibles</p>
+                      <p className="text-xs text-gray-500 mt-1">Contacta al administrador para agregar especialidades</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Hospitales (solo mostrar, no editar - para médicos) */}
+              {user.rol === RolEnum.MEDICO && profileData?.hospitales && profileData.hospitales.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900 border-b pb-2 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    <span>Hospitales Vinculados (Solo Lectura)</span>
+                  </h3>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
+                    <div className="flex items-start space-x-2">
+                      <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-blue-800">
+                        Los hospitales son asignados por el coordinador del sistema y no pueden ser editados desde aquí.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {profileData.hospitales.map((hospital: any) => (
+                      <div
+                        key={hospital.id}
+                        className="bg-gray-50 border border-gray-200 rounded-xl p-4 opacity-75"
+                      >
+                        <div className="flex items-start space-x-3">
+                          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <h5 className="font-semibold text-gray-900 text-base mb-1">
+                              {hospital.nombre}
+                            </h5>
+                            <div className="space-y-1 text-sm text-gray-600">
+                              {hospital.codigo && (
+                                <p>Código: {hospital.codigo}</p>
+                              )}
+                              {(hospital.departamento || hospital.ciudad || hospital.barrio) && (
+                                <p>
+                                  📍 {[hospital.barrio, hospital.ciudad, hospital.departamento]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Ubicación (solo para pacientes) */}
               {user.rol === RolEnum.PACIENTE && (
                 <div className="space-y-4">
@@ -378,7 +602,7 @@ export default function EditProfilePage() {
                     Puedes actualizar tu ubicación si te has mudado recientemente.
                   </p>
 
-                  <LocationPicker 
+                  <LocationPicker
                     key={`edit-location-picker-${profileData?.id || 'new'}`}
                     onLocationSelect={handleLocationSelect}
                     initialLat={profileData?.latitud}
@@ -392,6 +616,7 @@ export default function EditProfilePage() {
                 <button
                   type="submit"
                   disabled={saving}
+                  onClick={() => console.log('🔵 Botón Guardar clickeado')}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-green-600 text-white py-3.5 px-4 rounded-xl font-semibold shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
                 >
                   {saving ? (
