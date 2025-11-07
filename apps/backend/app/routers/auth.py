@@ -258,10 +258,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 def get_me(current_user=Depends(get_current_user)):
     """Obtiene la información del usuario autenticado"""
     return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "nombre": current_user.nombre,
-        "rol": current_user.rol.value,
+        "id": current_user["user_id"],
+        "email": current_user["email"],
+        "nombre": current_user["nombre"],
+        "rol": current_user["rol"],
     }
 
 

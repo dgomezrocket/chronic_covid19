@@ -25,7 +25,7 @@ export default function RegisterSelectionPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Opción Paciente */}
           <Link
-            href="/register"
+            href="/register/paciente"
             className="group relative bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 p-8 border-2 border-transparent hover:border-blue-500"
           >
             <div className="text-center">
