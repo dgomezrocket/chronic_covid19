@@ -46,7 +46,8 @@ def update_medico(
         current_user: dict = Depends(get_current_user)
 ):
     """Actualiza los datos de un médico"""
-    if current_user["user_id"] != medico_id and current_user["rol"] != "admin":
+    # ✅ CORRECCIÓN: Usar current_user["id"] y current_user["rol"] (diccionario, no objeto)
+    if current_user["id"] != medico_id and current_user["rol"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para actualizar este perfil"
@@ -103,6 +104,7 @@ def delete_medico(
         current_user: dict = Depends(get_current_user)
 ):
     """Elimina un médico (solo admin)"""
+    # ✅ CORRECCIÓN: Usar current_user["rol"] (diccionario, no objeto)
     if current_user["rol"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

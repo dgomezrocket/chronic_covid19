@@ -8,43 +8,58 @@ import {
   Medico,
   ApiError,
   Especialidad,
-  Hospital
+  EspecialidadCreate,
+  EspecialidadUpdate,
+  MedicoEspecialidad,
+  Hospital,
+  HospitalCreate,
+  HospitalUpdate,
+  Admin,
+  AdminCreate,
+  AdminUpdate
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
   private client: AxiosInstance;
   private token: string | null = null;
 
-  constructor(baseURL?: string) {
-    const API_URL = baseURL ||
-                    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
-                    'http://localhost:8000';
+constructor(baseURL?: string) {
+  const API_URL = baseURL ||
+                  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
+                  'http://localhost:8000';
 
-    this.client = axios.create({
-      baseURL: API_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000,
-    });
+  this.client = axios.create({
+    baseURL: API_URL,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout: 10000,
+  });
 
-    this.client.interceptors.request.use((config) => {
-      if (this.token) {
-        config.headers.Authorization = `Bearer ${this.token}`;
-      }
+  // Interceptor para agregar el token
+  this.client.interceptors.request.use((config) => {
+    if (this.token) {
+      config.headers.Authorization = `Bearer ${this.token}`;
+      console.log('🔒 Token agregado al header:', this.token.substring(0, 20) + '...');
+    } else {
+      console.log('⚠️ No hay token para agregar al header');
+    }
+    return config;
+  });
+
+  // Interceptor para logging de requests
+  this.client.interceptors.request.use(
+    (config) => {
+      console.log('🚀 Request:', config.method?.toUpperCase(), config.url);
+      console.log('🔑 Authorization header:', config.headers.Authorization ? 'Presente' : 'Ausente');
       return config;
-    });
+    },
+    (error) => {
+      console.error('❌ Request Error:', error);
+      return Promise.reject(error);
+    }
+  );
 
-    this.client.interceptors.request.use(
-      (config) => {
-        console.log('🚀 Request:', config.method?.toUpperCase(), config.url);
-        return config;
-      },
-      (error) => {
-        console.error('❌ Request Error:', error);
-        return Promise.reject(error);
-      }
-    );
 
     this.client.interceptors.response.use(
       (response) => {
@@ -62,13 +77,15 @@ export class ApiClient {
     );
   }
 
-  setToken(token: string) {
-    this.token = token;
-  }
+setToken(token: string) {
+  console.log('🔐 setToken llamado con:', token.substring(0, 20) + '...');
+  this.token = token;
+}
 
-  clearToken() {
-    this.token = null;
-  }
+clearToken() {
+  console.log('🔓 clearToken llamado');
+  this.token = null;
+}
 
   getToken(): string | null {
     return this.token;
@@ -183,9 +200,69 @@ export class ApiClient {
 
   // ========== ESPECIALIDADES ENDPOINTS ==========
 
-  async getAllEspecialidades(requireAuth: boolean = false): Promise<Especialidad[]> {
+  async getAllEspecialidades(incluir_inactivas: boolean = false): Promise<Especialidad[]> {
     try {
-      const response = await this.client.get<Especialidad[]>('/especialidades/');
+      const response = await this.client.get<Especialidad[]>(
+        `/especialidades/?incluir_inactivas=${incluir_inactivas}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getEspecialidadById(id: number): Promise<Especialidad> {
+    try {
+      const response = await this.client.get<Especialidad>(`/especialidades/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createEspecialidad(data: EspecialidadCreate): Promise<Especialidad> {
+    try {
+      const response = await this.client.post<Especialidad>('/especialidades/', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async updateEspecialidad(id: number, data: EspecialidadUpdate): Promise<Especialidad> {
+    try {
+      const response = await this.client.put<Especialidad>(`/especialidades/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async deleteEspecialidad(id: number): Promise<{ message: string; id: number }> {
+    try {
+      const response = await this.client.delete<{ message: string; id: number }>(
+        `/especialidades/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getMedicosByEspecialidad(especialidadId: number): Promise<MedicoEspecialidad[]> {
+    try {
+      const response = await this.client.get<MedicoEspecialidad[]>(
+        `/especialidades/${especialidadId}/medicos`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async reactivarEspecialidad(id: number): Promise<Especialidad> {
+    try {
+      const response = await this.client.post<Especialidad>(`/especialidades/${id}/reactivar`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -194,9 +271,20 @@ export class ApiClient {
 
   // ========== HOSPITALES ENDPOINTS ==========
 
-  async getAllHospitales(): Promise<Hospital[]> {
+  async getAllHospitales(
+    skip: number = 0,
+    limit: number = 100,
+    filters?: { nombre?: string; departamento?: string; ciudad?: string }
+  ): Promise<Hospital[]> {
     try {
-      const response = await this.client.get<Hospital[]>('/hospitales/');
+      const params = new URLSearchParams();
+      params.append('skip', skip.toString());
+      params.append('limit', limit.toString());
+      if (filters?.nombre) params.append('nombre', filters.nombre);
+      if (filters?.departamento) params.append('departamento', filters.departamento);
+      if (filters?.ciudad) params.append('ciudad', filters.ciudad);
+
+      const response = await this.client.get<Hospital[]>(`/hospitales/?${params.toString()}`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -214,7 +302,122 @@ export class ApiClient {
 
   async getHospitalesCercanos(lat: number, lon: number, radio: number = 5.0): Promise<Hospital[]> {
     try {
-      const response = await this.client.get<Hospital[]>(`/hospitales/nearby?lat=${lat}&lon=${lon}&radio=${radio}`);
+      const response = await this.client.get<Hospital[]>(
+        `/hospitales/nearby?lat=${lat}&lon=${lon}&radio=${radio}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createHospital(data: HospitalCreate): Promise<Hospital> {
+    try {
+      const response = await this.client.post<Hospital>('/hospitales/', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async updateHospital(id: number, data: HospitalUpdate): Promise<Hospital> {
+    try {
+      const response = await this.client.put<Hospital>(`/hospitales/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async deleteHospital(id: number): Promise<{ message: string; id: number }> {
+    try {
+      const response = await this.client.delete<{ message: string; id: number }>(
+        `/hospitales/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async importHospitalesCSV(file: File): Promise<{ importados: number; errores: string[] | null; total_errores: number }> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await this.client.post<{ importados: number; errores: string[] | null; total_errores: number }>(
+        '/hospitales/import',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== ADMINS ENDPOINTS ==========
+
+    async getAllAdmins(incluir_inactivos: boolean = false): Promise<Admin[]> {
+      try {
+        const response = await this.client.get<Admin[]>(
+          `/admins/?incluir_inactivos=${incluir_inactivos}`
+        );
+        return response.data;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    async getAdminById(id: number): Promise<Admin> {
+      try {
+        const response = await this.client.get<Admin>(`/admins/${id}`);
+        return response.data;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    async getAdmin(adminId: number): Promise<Admin> {
+      return this.getAdminById(adminId);
+    }
+
+  async createAdmin(data: AdminCreate): Promise<Admin> {
+    try {
+      const response = await this.client.post<Admin>('/admins/', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async updateAdmin(id: number, data: AdminUpdate): Promise<Admin> {
+    try {
+      const response = await this.client.put<Admin>(`/admins/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async deactivateAdmin(id: number): Promise<{ message: string; id: number }> {
+    try {
+      const response = await this.client.delete<{ message: string; id: number }>(
+        `/admins/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async reactivateAdmin(id: number): Promise<Admin> {
+    try {
+      const response = await this.client.post<Admin>(`/admins/${id}/reactivar`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);

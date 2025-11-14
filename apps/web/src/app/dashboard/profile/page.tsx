@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -32,42 +31,59 @@ export default function ProfilePage() {
 
   // Función para cargar datos del perfil
   const loadProfile = async () => {
-    try {
-      if (token && user) {
-        apiClient.setToken(token);
+  try {
+    if (token && user) {
+      // ✅ IMPORTANTE: Asegurarse de que el token esté configurado ANTES de hacer peticiones
+      console.log('🔍 Usuario actual:', user);
+      console.log('🔑 Token disponible:', !!token);
+      console.log('🔑 Token (primeros 20 chars):', token.substring(0, 20) + '...');
 
-        console.log('🔍 Usuario actual:', user);
+      // Configurar explícitamente el token antes de cada petición
+      apiClient.setToken(token);
 
-        // Obtener datos completos según el rol
-        if (user.rol === RolEnum.PACIENTE) {
-          console.log('📋 Obteniendo datos completos del paciente con ID:', user.id);
-          const pacienteData = await apiClient.getPaciente(user.id);
-          console.log('✅ Datos del paciente recibidos:', pacienteData);
-          setProfileData(pacienteData);
-        } else if (user.rol === RolEnum.MEDICO) {
-          console.log('🩺 Obteniendo datos completos del médico con ID:', user.id);
-          const medicoData = await apiClient.getMedico(user.id);
-          console.log('✅ Datos del médico recibidos:', medicoData);
-          console.log('📌 Especialidades:', medicoData.especialidades);
-          console.log('🏥 Hospitales:', medicoData.hospitales);
-          setProfileData(medicoData);
-        } else {
-          // Para coordinadores u otros roles, solo info básica
-          setProfileData({
-            id: user.id,
-            email: user.email,
-            nombre: user.nombre,
-            rol: user.rol,
-          });
-        }
+      // Verificar que el token se configuró correctamente
+      const tokenConfigured = apiClient.getToken();
+      console.log('🔑 Token configurado en apiClient:', !!tokenConfigured);
+      console.log('🔑 Token match:', token === tokenConfigured);
+
+      // Obtener datos completos según el rol
+      if (user.rol === RolEnum.PACIENTE) {
+        console.log('📋 Obteniendo datos completos del paciente con ID:', user.id);
+        const pacienteData = await apiClient.getPaciente(user.id);
+        console.log('✅ Datos del paciente recibidos:', pacienteData);
+        setProfileData(pacienteData);
+      } else if (user.rol === RolEnum.MEDICO) {
+        console.log('🩺 Obteniendo datos completos del médico con ID:', user.id);
+        const medicoData = await apiClient.getMedico(user.id);
+        console.log('✅ Datos del médico recibidos:', medicoData);
+        setProfileData(medicoData);
+      } else if (user.rol === RolEnum.ADMIN) {
+        console.log('🔑 Obteniendo datos completos del administrador con ID:', user.id);
+        console.log('🔑 Token antes de llamar getAdmin:', apiClient.getToken()?.substring(0, 20) + '...');
+        const adminData = await apiClient.getAdmin(user.id);
+        console.log('✅ Datos del administrador recibidos:', adminData);
+        setProfileData(adminData);
+      } else {
+        // Para coordinadores u otros roles, solo info básica
+        setProfileData({
+          id: user.id,
+          email: user.email,
+          nombre: user.nombre,
+          rol: user.rol,
+        });
       }
-    } catch (err) {
-      console.error('❌ Error al cargar perfil:', err);
-      setError(err instanceof Error ? err.message : 'Error al cargar perfil');
-    } finally {
-      setLoading(false);
+    } else {
+      console.error('❌ No hay token o usuario disponible');
+      console.log('Token:', !!token);
+      console.log('User:', !!user);
     }
-  };
+  } catch (err) {
+    console.error('❌ Error al cargar perfil:', err);
+    setError(err instanceof Error ? err.message : 'Error al cargar perfil');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -95,31 +111,43 @@ export default function ProfilePage() {
     router.push('/login');
   };
 
-  const getRoleBadgeColor = (rol: RolEnum) => {
-    switch (rol) {
-      case RolEnum.PACIENTE:
-        return 'bg-blue-100 text-blue-700 border-blue-200';
-      case RolEnum.MEDICO:
-        return 'bg-green-100 text-green-700 border-green-200';
-      case RolEnum.COORDINADOR:
-        return 'bg-purple-100 text-purple-700 border-purple-200';
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-200';
-    }
-  };
+  const getRoleBadgeColor = (rol: RolEnum | string) => {
+  switch (rol) {
+    case RolEnum.PACIENTE:
+    case 'paciente':
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    case RolEnum.MEDICO:
+    case 'medico':
+      return 'bg-green-100 text-green-700 border-green-200';
+    case RolEnum.COORDINADOR:
+    case 'coordinador':
+      return 'bg-purple-100 text-purple-700 border-purple-200';
+    case RolEnum.ADMIN:
+    case 'admin':
+      return 'bg-red-100 text-red-700 border-red-200';
+    default:
+      return 'bg-gray-100 text-gray-700 border-gray-200';
+  }
+};
 
-  const getRoleText = (rol: RolEnum) => {
-    switch (rol) {
-      case RolEnum.PACIENTE:
-        return 'Paciente';
-      case RolEnum.MEDICO:
-        return 'Médico';
-      case RolEnum.COORDINADOR:
-        return 'Coordinador';
-      default:
-        return rol;
-    }
-  };
+const getRoleText = (rol: RolEnum | string) => {
+  switch (rol) {
+    case RolEnum.PACIENTE:
+    case 'paciente':
+      return 'Paciente';
+    case RolEnum.MEDICO:
+    case 'medico':
+      return 'Médico';
+    case RolEnum.COORDINADOR:
+    case 'coordinador':
+      return 'Coordinador';
+    case RolEnum.ADMIN:
+    case 'admin':
+      return 'Administrador';
+    default:
+      return typeof rol === 'string' ? rol : 'Usuario';
+  }
+};
 
   const getGeneroText = (genero: string) => {
     return genero === GeneroEnum.MASCULINO ? 'Masculino' : 'Femenino';
@@ -317,7 +345,127 @@ export default function ProfilePage() {
                     <p className="text-gray-900 text-base">{profileData.direccion}</p>
                   </div>
                 )}
+
+                {/* Campos específicos para Administrador */}
+                {user.rol === RolEnum.ADMIN && (
+                  <>
+                    {profileData?.fecha_creacion && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Fecha de Creación</label>
+                        <p className="text-gray-900 text-base">
+                          {new Date(profileData.fecha_creacion).toLocaleDateString('es-PY', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    )}
+
+                    {profileData?.activo !== undefined && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Estado de la Cuenta</label>
+                        <div className="flex items-center space-x-2">
+                          {profileData.activo === 1 ? (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700 border border-green-200">
+                              <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              Activo
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-700 border border-red-200">
+                              <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                              </svg>
+                              Inactivo
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
+
+              {/* Badge de privilegios de Administrador */}
+              {user.rol === RolEnum.ADMIN && (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <span>Privilegios de Administrador</span>
+                  </h4>
+
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                    <div className="space-y-3">
+                      <p className="text-sm text-red-900 font-semibold mb-3">
+                        Como administrador, tienes acceso completo a:
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Gestión de usuarios</span>
+                        </div>
+
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Administración de hospitales</span>
+                        </div>
+
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Gestión de especialidades</span>
+                        </div>
+
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Configuración del sistema</span>
+                        </div>
+
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Reportes y estadísticas</span>
+                        </div>
+
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-sm text-red-800">Supervisión general</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-red-200">
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <p className="text-xs text-red-800">
+                            <strong>Importante:</strong> Con grandes poderes vienen grandes responsabilidades.
+                            Usa tus privilegios de administrador con precaución y siempre respetando la
+                            privacidad y seguridad de los datos de los usuarios.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Especialidades (solo para médicos) */}
               {user.rol === RolEnum.MEDICO && profileData?.especialidades && profileData.especialidades.length > 0 && (

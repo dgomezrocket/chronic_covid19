@@ -81,7 +81,7 @@ def get_current_user(
 
         # ✅ DEVOLVER UN DICCIONARIO EN LUGAR DE BUSCAR EN LA BD
         return {
-            "user_id": int(user_id),
+            "id": int(user_id),
             "rol": rol,
             "email": email,
             "nombre": nombre

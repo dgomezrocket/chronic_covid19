@@ -8,6 +8,7 @@ from app.routers import (
     hospitales,
     formularios,
     mensajes,
+admins
 )
 
 app = FastAPI(
@@ -39,6 +40,7 @@ app.include_router(especialidades.router, prefix="/especialidades", tags=["espec
 app.include_router(hospitales.router, prefix="/hospitales", tags=["hospitales"])
 app.include_router(formularios.router, prefix="/formularios", tags=["formularios"])
 app.include_router(mensajes.router, prefix="/mensajes", tags=["mensajes"])
+app.include_router(admins.router, prefix="/admins", tags=["admins"])
 
 
 @app.get("/")

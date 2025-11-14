@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 
 
@@ -19,31 +19,32 @@ class GeneroEnum(str, Enum):
     otro = "otro"
 
 
-# ========== HOSPITAL SCHEMAS ==========
+# ========== SCHEMAS DE HOSPITALES ==========
 
 class HospitalBase(BaseModel):
     nombre: str
     codigo: Optional[str] = None
-    departamento: Optional[str] = None
     ciudad: Optional[str] = None
+    departamento: Optional[str] = None
     barrio: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
-
 
 class HospitalCreate(HospitalBase):
     pass
 
-
 class HospitalUpdate(BaseModel):
     nombre: Optional[str] = None
     codigo: Optional[str] = None
-    departamento: Optional[str] = None
     ciudad: Optional[str] = None
+    departamento: Optional[str] = None
     barrio: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
-
 
 class HospitalOut(HospitalBase):
     id: int
@@ -313,3 +314,30 @@ class AsignacionOut(AsignacionBase):
 
 # Alias para compatibilidad
 AsignacionResponse = AsignacionOut
+
+
+# ========== SCHEMAS DE ADMIN ==========
+
+class AdminBase(BaseModel):
+    nombre: str
+    email: str
+    documento: str
+    telefono: Optional[str] = None
+
+class AdminCreate(AdminBase):
+    password: str
+
+class AdminUpdate(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    activo: Optional[int] = None
+
+class AdminOut(AdminBase):
+    id: int
+    activo: int
+    fecha_creacion: datetime
+    rol: RolEnum
+
+    class Config:
+        from_attributes = True

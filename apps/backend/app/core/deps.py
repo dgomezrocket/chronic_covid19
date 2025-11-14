@@ -1,8 +1,9 @@
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from apps.backend.app.core.config import settings
-from apps.backend.app.schemas.schemas import TokenData, RolEnum
+from app.core.config import settings  # ← Cambiar de apps.backend.app a app
+from app.schemas.schemas import TokenData, RolEnum  # ← Cambiar de apps.backend.app a app
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -30,3 +31,30 @@ def require_role(required_roles: list):
         return user
     return role_dependency
 
+# Decoradores específicos por rol
+def require_admin(user: TokenData = Depends(get_current_user)):
+    """Requiere que el usuario sea admin"""
+    if user.rol != RolEnum.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de administrador"
+        )
+    return user
+
+def require_medico(user: TokenData = Depends(get_current_user)):
+    """Requiere que el usuario sea médico o admin"""
+    if user.rol not in [RolEnum.medico, RolEnum.admin]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de médico"
+        )
+    return user
+
+def require_coordinador(user: TokenData = Depends(get_current_user)):
+    """Requiere que el usuario sea coordinador o admin"""
+    if user.rol not in [RolEnum.coordinador, RolEnum.admin]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de coordinador"
+        )
+    return user

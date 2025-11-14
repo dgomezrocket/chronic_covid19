@@ -147,3 +147,95 @@ export interface Asignacion {
   medico_id: number;
   fecha_asignacion: string;
 }
+
+// ========== TIPOS PARA ESPECIALIDADES ==========
+
+export interface Especialidad {
+  id: number;
+  nombre: string;
+  descripcion?: string;
+  activa: number;
+}
+
+export interface EspecialidadCreate {
+  nombre: string;
+  descripcion?: string;
+}
+
+export interface EspecialidadUpdate {
+  nombre?: string;
+  descripcion?: string;
+  activa?: number;
+}
+
+export interface MedicoEspecialidad {
+  id: number;
+  nombre: string;
+  documento: string;
+  email: string;
+  hospital_id: number | null;
+  hospital_nombre: string | null;
+}
+
+// ========== TIPOS PARA HOSPITALES ==========
+
+export interface Hospital {
+  id: number;
+  nombre: string;
+  codigo?: string;
+  ciudad?: string;
+  departamento?: string;
+  barrio?: string;
+  direccion?: string;
+  telefono?: string;
+  latitud?: number;
+  longitud?: number;
+}
+
+export interface HospitalCreate {
+  nombre: string;
+  codigo?: string;
+  ciudad?: string;
+  departamento?: string;
+  barrio?: string;
+  direccion?: string;
+  telefono?: string;
+  latitud?: number;
+  longitud?: number;
+}
+
+export interface HospitalUpdate {
+  nombre?: string;
+  codigo?: string;
+  ciudad?: string;
+  departamento?: string;
+  barrio?: string;
+  direccion?: string;
+  telefono?: string;
+  latitud?: number;
+  longitud?: number;
+}
+
+// ========== TIPOS PARA ADMINISTRADORES ==========
+
+export interface Admin extends Usuario {
+  documento: string;
+  telefono?: string;
+  activo: number;
+  fecha_creacion: string;
+}
+
+export interface AdminCreate {
+  nombre: string;
+  email: string;
+  documento: string;
+  telefono?: string;
+  password: string;
+}
+
+export interface AdminUpdate {
+  nombre?: string;
+  email?: string;
+  telefono?: string;
+  activo?: number;
+}

@@ -66,3 +66,14 @@ export const updateMedicoSchema = z.object({
 });
 
 export type UpdateMedicoFormData = z.infer<typeof updateMedicoSchema>;
+
+
+// ========== UPDATE ADMIN SCHEMA ==========
+export const updateAdminSchema = z.object({
+  nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').optional(),
+  email: z.string().email('Email inválido').optional(),
+  telefono: z.string().optional(),
+  documento: z.string().optional(),
+});
+
+export type UpdateAdminFormData = z.infer<typeof updateAdminSchema>;

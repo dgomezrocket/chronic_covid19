@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.db import get_db
-from app.models.models import Paciente, Medico, Coordinador, Hospital, RolEnum  # Agregar Hospital aquí
+from app.models.models import Paciente, Medico, Coordinador, Hospital, Admin, RolEnum  # Agregar Hospital aquí
 from app.schemas.schemas import (
     PacienteCreate, MedicoCreate, CoordinadorCreate,
     Token, UserInfo
@@ -208,9 +208,10 @@ def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(g
 
 # ========== LOGIN UNIVERSAL ==========
 
+
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login universal para pacientes, médicos y coordinadores"""
+    """Login universal para pacientes, médicos, coordinadores y administradores"""
     # Buscar en todas las tablas de usuarios
     user = None
     user_type = None
@@ -231,6 +232,19 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         user = db.query(Coordinador).filter(Coordinador.email == form_data.username).first()
         if user:
             user_type = "coordinador"
+
+    # Si no es coordinador, buscar en administradores
+    if not user:
+        user = db.query(Admin).filter(Admin.email == form_data.username).first()
+        if user:
+            user_type = "admin"
+            # Verificar que el admin esté activo
+            if user.activo == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cuenta de administrador desactivada. Contacta al sistema.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
     # Verificar contraseña
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -255,13 +269,34 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # ========== INFORMACIÓN DEL USUARIO ACTUAL ==========
 
 @router.get("/me", response_model=UserInfo)
-def get_me(current_user=Depends(get_current_user)):
+def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """Obtiene la información del usuario autenticado"""
+    user_id = current_user["id"]
+    user_rol = current_user["rol"]
+
+    # Buscar según el rol
+    if user_rol == "paciente":
+        user = db.query(Paciente).filter(Paciente.id == user_id).first()
+    elif user_rol == "medico":
+        user = db.query(Medico).filter(Medico.id == user_id).first()
+    elif user_rol == "coordinador":
+        user = db.query(Coordinador).filter(Coordinador.id == user_id).first()
+    elif user_rol == "admin":
+        user = db.query(Admin).filter(Admin.id == user_id).first()
+    else:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Retornar información básica del usuario
     return {
-        "id": current_user["user_id"],
-        "email": current_user["email"],
-        "nombre": current_user["nombre"],
-        "rol": current_user["rol"],
+        "id": user.id,
+        "email": user.email,
+        "nombre": user.nombre,
+        "rol": user.rol.value,
+        "documento": user.documento if hasattr(user, 'documento') else None,
+        "telefono": user.telefono if hasattr(user, 'telefono') else None,
     }
 
 

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -12,7 +13,9 @@ import {
   updatePacienteSchema,
   UpdatePacienteFormData,
   updateMedicoSchema,
-  UpdateMedicoFormData
+  UpdateMedicoFormData,
+  updateAdminSchema,
+  UpdateAdminFormData
 } from '@chronic-covid19/api-client/dist/validation';
 import { RolEnum, GeneroEnum, Especialidad } from '@chronic-covid19/shared-types';
 
@@ -37,10 +40,21 @@ export default function EditProfilePage() {
   const [especialidadesSeleccionadas, setEspecialidadesSeleccionadas] = useState<number[]>([]);
   const [loadingEspecialidades, setLoadingEspecialidades] = useState(false);
 
-    // ✅ USAR EL SCHEMA CORRECTO SEGÚN EL ROL
-  const isPaciente = user?.rol === RolEnum.PACIENTE;
-  const schema = isPaciente ? updatePacienteSchema : updateMedicoSchema;
-  type FormData = typeof isPaciente extends true ? UpdatePacienteFormData : UpdateMedicoFormData;
+  // ✅ USAR EL SCHEMA CORRECTO SEGÚN EL ROL
+  const getSchemaForRole = () => {
+    if (!user) return updatePacienteSchema;
+
+    switch (user.rol) {
+      case RolEnum.PACIENTE:
+        return updatePacienteSchema;
+      case RolEnum.MEDICO:
+        return updateMedicoSchema;
+      case RolEnum.ADMIN:
+        return updateAdminSchema;
+      default:
+        return updatePacienteSchema;
+    }
+  };
 
   const {
     register,
@@ -49,18 +63,18 @@ export default function EditProfilePage() {
     watch,
     formState: { errors },
     reset,
-  } = useForm<any>({
-    resolver: zodResolver(schema),
+  } = useForm<UpdatePacienteFormData | UpdateMedicoFormData | UpdateAdminFormData>({
+    resolver: zodResolver(getSchemaForRole()),
   });
 
   const watchedFields = watch();
-  // Log de debug cuando cambian los errores
-useEffect(() => {
-  if (Object.keys(errors).length > 0) {
-    console.log('⚠️ Errores de validación:', errors);
-  }
-}, [errors]);
 
+  // Log de debug cuando cambian los errores
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      console.log('⚠️ Errores de validación:', errors);
+    }
+  }, [errors]);
 
   // Cargar especialidades disponibles (solo para médicos)
   useEffect(() => {
@@ -108,6 +122,9 @@ useEffect(() => {
               console.log('🩺 Especialidades actuales del médico:', especialidadIds);
               setEspecialidadesSeleccionadas(especialidadIds);
             }
+          } else if (user.rol === RolEnum.ADMIN) {
+            data = await apiClient.getAdmin(user.id);
+            console.log('👑 Datos del administrador cargados:', data);
           } else {
             data = await apiClient.getMe();
           }
@@ -117,11 +134,14 @@ useEffect(() => {
           // Pre-llenar el formulario con los datos actuales
           reset({
             nombre: data.nombre || '',
-            fecha_nacimiento: data.fecha_nacimiento || '',
-            genero: data.genero || '',
-            direccion: data.direccion || '',
-            telefono: data.telefono || '',
             email: data.email || '',
+            telefono: data.telefono || '',
+            // Campos específicos de paciente
+            ...(user.rol === RolEnum.PACIENTE && {
+              fecha_nacimiento: data.fecha_nacimiento || '',
+              genero: data.genero || '',
+              direccion: data.direccion || '',
+            }),
           });
 
           // Si tiene ubicación, guardarla y establecer en el formulario
@@ -165,82 +185,99 @@ useEffect(() => {
     });
   };
 
-  const onSubmit = async (data: UpdatePacienteFormData) => {
-        console.log('🟢 ========== onSubmit EJECUTADO ==========');
-        console.log('📤 Datos del formulario:', data);
-   if (!user) {
-    console.log('❌ No hay usuario');
-    return;
-  }
+  const onSubmit = async (data: any) => {
+    console.log('🟢 ========== onSubmit EJECUTADO ==========');
+    console.log('📤 Datos del formulario:', data);
 
-  setSaving(true);
-  setError('');
-  setSuccess('');
-
-  try {
-        console.log('👤 Usuario:', user);
-        console.log('🔑 Token existe:', !!token);
-        console.log('📤 Datos del formulario:', data);
-
-    if (token) {
-      apiClient.setToken(token);
+    if (!user) {
+      console.log('❌ No hay usuario');
+      return;
     }
 
-    // Actualizar según el rol
-    if (user.rol === RolEnum.PACIENTE) {
-      // Para pacientes: agregar coordenadas
-      const updateData = {
-        ...data,
-        latitud: location?.lat || profileData?.latitud,
-        longitud: location?.lng || profileData?.longitud,
-      };
+    setSaving(true);
+    setError('');
+    setSuccess('');
 
-      console.log('📤 Enviando actualización de PACIENTE:', updateData);
-      const response = await apiClient.updatePaciente(user.id, updateData);
-      console.log('✅ Respuesta del servidor (Paciente):', response);
+    try {
+      console.log('👤 Usuario:', user);
+      console.log('🔑 Token existe:', !!token);
 
-    } else if (user.rol === RolEnum.MEDICO) {
-      // Para médicos: solo datos básicos + especialidades (SIN coordenadas)
-      const updateData: any = {
-        nombre: data.nombre,
-        email: data.email,
-        telefono: data.telefono,
-        especialidad_ids: especialidadesSeleccionadas
-      };
+      if (token) {
+        apiClient.setToken(token);
+      }
 
-      console.log('📤 Enviando actualización de MÉDICO:', updateData);
-      console.log('🩺 Especialidades seleccionadas:', especialidadesSeleccionadas);
+      // Actualizar según el rol
+      if (user.rol === RolEnum.PACIENTE) {
+        // Para pacientes: agregar coordenadas
+        const updateData: UpdatePacienteFormData = {
+          nombre: data.nombre,
+          email: data.email,
+          telefono: data.telefono,
+          fecha_nacimiento: data.fecha_nacimiento,
+          genero: data.genero,
+          direccion: data.direccion,
+          latitud: location?.lat || profileData?.latitud,
+          longitud: location?.lng || profileData?.longitud,
+        };
 
-      const response = await apiClient.updateMedico(user.id, updateData);
-      console.log('✅ Respuesta del servidor (Médico):', response);
+        console.log('📤 Enviando actualización de PACIENTE:', updateData);
+        const response = await apiClient.updatePaciente(user.id, updateData);
+        console.log('✅ Respuesta del servidor (Paciente):', response);
+
+      } else if (user.rol === RolEnum.MEDICO) {
+        // Para médicos: solo datos básicos + especialidades (SIN coordenadas)
+        const updateData: UpdateMedicoFormData = {
+          nombre: data.nombre,
+          email: data.email,
+          telefono: data.telefono,
+          especialidad_ids: especialidadesSeleccionadas
+        };
+
+        console.log('📤 Enviando actualización de MÉDICO:', updateData);
+        console.log('🩺 Especialidades seleccionadas:', especialidadesSeleccionadas);
+
+        const response = await apiClient.updateMedico(user.id, updateData);
+        console.log('✅ Respuesta del servidor (Médico):', response);
+
+      } else if (user.rol === RolEnum.ADMIN) {
+        // Para administradores: solo datos básicos (nombre, email, telefono)
+        const updateData: UpdateAdminFormData = {
+          nombre: data.nombre,
+          email: data.email,
+          telefono: data.telefono,
+        };
+
+        console.log('📤 Enviando actualización de ADMINISTRADOR:', updateData);
+        const response = await apiClient.updateAdmin(user.id, updateData);
+        console.log('✅ Respuesta del servidor (Administrador):', response);
+      }
+
+      setSuccess('✅ Perfil actualizado correctamente. Redirigiendo...');
+
+      // Redirigir con parámetro de actualización después de 1.5 segundos
+      setTimeout(() => {
+        router.push('/dashboard/profile?updated=true');
+      }, 1500);
+
+    } catch (err: any) {
+      console.error('❌ Error completo:', err);
+      console.error('❌ Error response:', err?.response);
+      console.error('❌ Error data:', err?.response?.data);
+
+      let errorMessage = 'Error al actualizar perfil';
+
+      if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setSaving(false);
+      console.log('🟢 ========== onSubmit FINALIZADO ==========');
     }
-
-    setSuccess('✅ Perfil actualizado correctamente. Redirigiendo...');
-
-    // Redirigir con parámetro de actualización después de 1.5 segundos
-    setTimeout(() => {
-      router.push('/dashboard/profile?updated=true');
-    }, 1500);
-
-  } catch (err: any) {
-    console.error('❌ Error completo:', err);
-    console.error('❌ Error response:', err?.response);
-    console.error('❌ Error data:', err?.response?.data);
-
-    let errorMessage = 'Error al actualizar perfil';
-
-    if (err?.response?.data?.detail) {
-      errorMessage = err.response.data.detail;
-    } else if (err instanceof Error) {
-      errorMessage = err.message;
-    }
-
-    setError(errorMessage);
-  } finally {
-    setSaving(false);
-    console.log('🟢 ========== onSubmit FINALIZADO ==========');
-  }
-};
+  };
 
   const handleLogout = () => {
     logout();
@@ -255,6 +292,8 @@ useEffect(() => {
         return 'bg-green-100 text-green-700 border-green-200';
       case RolEnum.COORDINADOR:
         return 'bg-purple-100 text-purple-700 border-purple-200';
+      case RolEnum.ADMIN:
+        return 'bg-red-100 text-red-700 border-red-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
     }
@@ -268,6 +307,8 @@ useEffect(() => {
         return 'Médico';
       case RolEnum.COORDINADOR:
         return 'Coordinador';
+      case RolEnum.ADMIN:
+        return 'Administrador';
       default:
         return rol;
     }
@@ -297,7 +338,6 @@ useEffect(() => {
               <div>
                 <span className="block text-lg font-bold text-gray-900">PINV20-292</span>
                 <span className="block text-xs text-gray-500">Editar Perfil</span>
-
               </div>
             </Link>
 
@@ -384,6 +424,22 @@ useEffect(() => {
                 <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Información Personal</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Documento (Solo lectura para todos los roles que lo tienen) */}
+                  {profileData?.documento && (
+                    <div>
+                      <label htmlFor="documento" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Documento de Identidad
+                      </label>
+                      <input
+                        type="text"
+                        value={profileData.documento}
+                        disabled
+                        className="block w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">📌 El documento no puede ser modificado</p>
+                    </div>
+                  )}
+
                   <div>
                     <label htmlFor="nombre" className="block text-sm font-semibold text-gray-700 mb-2">
                       Nombre Completo
@@ -424,6 +480,19 @@ useEffect(() => {
                     )}
                   </div>
 
+                  <div>
+                    <label htmlFor="telefono" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Teléfono
+                    </label>
+                    <input
+                      {...register('telefono')}
+                      type="tel"
+                      className="block w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0981234567"
+                    />
+                  </div>
+
+                  {/* Campos específicos de PACIENTE */}
                   {user.rol === RolEnum.PACIENTE && (
                     <>
                       <div>
@@ -453,17 +522,67 @@ useEffect(() => {
                     </>
                   )}
 
-                  <div>
-                    <label htmlFor="telefono" className="block text-sm font-semibold text-gray-700 mb-2">
-                      Teléfono
-                    </label>
-                    <input
-                      {...register('telefono')}
-                      type="tel"
-                      className="block w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0981234567"
-                    />
-                  </div>
+                  {/* Campos de solo lectura para ADMINISTRADOR */}
+                  {user.rol === RolEnum.ADMIN && (
+                    <>
+                      {profileData?.fecha_creacion && (
+                        <div className="md:col-span-2">
+                          <label htmlFor="fecha_creacion" className="block text-sm font-semibold text-gray-700 mb-2">
+                            Fecha de Creación de la Cuenta
+                          </label>
+                          <input
+                            type="text"
+                            value={new Date(profileData.fecha_creacion).toLocaleDateString('es-PY', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                            disabled
+                            className="block w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">📅 Fecha de registro en el sistema</p>
+                        </div>
+                      )}
+
+                      {profileData?.activo !== undefined && (
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Estado de la Cuenta
+                          </label>
+                          <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                            {profileData.activo === 1 ? (
+                              <>
+                                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                  <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-green-900">Cuenta Activa</p>
+                                  <p className="text-xs text-green-700">Tienes acceso completo al sistema</p>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                  <svg className="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-red-900">Cuenta Inactiva</p>
+                                  <p className="text-xs text-red-700">Contacta a otro administrador</p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">🔒 El estado de la cuenta solo puede ser modificado por otro administrador</p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -616,7 +735,6 @@ useEffect(() => {
                 <button
                   type="submit"
                   disabled={saving}
-                  onClick={() => console.log('🔵 Botón Guardar clickeado')}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-green-600 text-white py-3.5 px-4 rounded-xl font-semibold shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
                 >
                   {saving ? (

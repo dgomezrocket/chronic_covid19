@@ -182,3 +182,20 @@ class Mensaje(Base):
     # Relaciones
     paciente = relationship("Paciente", back_populates="mensajes")
     medico = relationship("Medico", back_populates="mensajes")
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    documento = Column(String, unique=True, nullable=False, index=True)
+    nombre = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
+    telefono = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=False)
+    rol = Column(Enum(RolEnum), default=RolEnum.admin, nullable=False)
+    activo = Column(Integer, default=1, nullable=False)  # 0 = inactivo, 1 = activo
+    fecha_creacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Admin(id={self.id}, nombre='{self.nombre}', email='{self.email}')>"

@@ -25,50 +25,52 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    setLoading(true);
-    setError('');
+  setLoading(true);
+  setError('');
 
-    try {
-      console.log('📤 Intentando login con:', data.username);
+  try {
+    console.log('📤 Intentando login con:', data.username);
 
-      const response = await apiClient.login({
-        username: data.username,
-        password: data.password,
-      });
+    const response = await apiClient.login({
+      username: data.username,
+      password: data.password,
+    });
 
-      console.log('✅ Login exitoso, obteniendo información del usuario...');
+    console.log('✅ Login exitoso, obteniendo información del usuario...');
 
-      const userInfo = await apiClient.getMe();
+    const userInfo = await apiClient.getMe();
 
-      let rol: RolEnum;
-      if (userInfo.rol === 'paciente') {
-        rol = RolEnum.PACIENTE;
-      } else if (userInfo.rol === 'medico') {
-        rol = RolEnum.MEDICO;
-      } else if (userInfo.rol === 'coordinador') {
-        rol = RolEnum.COORDINADOR;
-      } else {
-        rol = RolEnum.PACIENTE;
-      }
-
-      login({
-        user: {
-          id: userInfo.id,
-          email: userInfo.email,
-          nombre: userInfo.nombre,
-          rol: rol,
-        },
-        token: response.access_token,
-      });
-
-      router.push('/dashboard');
-    } catch (err) {
-      console.error('❌ Error en login:', err);
-      setError(err instanceof Error ? err.message : 'Credenciales inválidas');
-    } finally {
-      setLoading(false);
+    let rol: RolEnum;
+    if (userInfo.rol === 'paciente') {
+      rol = RolEnum.PACIENTE;
+    } else if (userInfo.rol === 'medico') {
+      rol = RolEnum.MEDICO;
+    } else if (userInfo.rol === 'coordinador') {
+      rol = RolEnum.COORDINADOR;
+    } else if (userInfo.rol === 'admin') {
+      rol = RolEnum.ADMIN;
+    } else {
+      rol = RolEnum.PACIENTE;
     }
-  };
+
+    login({
+      user: {
+        id: userInfo.id,
+        email: userInfo.email,
+        nombre: userInfo.nombre,
+        rol: rol,
+      },
+      token: response.access_token,
+    });
+
+    router.push('/dashboard');
+  } catch (err) {
+    console.error('❌ Error en login:', err);
+    setError(err instanceof Error ? err.message : 'Credenciales inválidas');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">

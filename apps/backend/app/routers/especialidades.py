@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.db.db import get_db
-from app.models.models import Especialidad
+from app.models.models import Especialidad, Medico
 from app.schemas.schemas import EspecialidadCreate, EspecialidadUpdate, EspecialidadResponse
-from app.core.security import get_current_user
+from app.core.deps import get_current_user, require_admin
 
-router = APIRouter()  # ⚠️ QUITAR prefix="/especialidades" de aquí
+router = APIRouter()
 
 
 @router.get("/", response_model=List[EspecialidadResponse])
@@ -25,19 +25,19 @@ def get_all_especialidades(
 
 
 @router.get("/{especialidad_id}", response_model=EspecialidadResponse)
-def get_especialidad(
+def get_especialidad_by_id(
         especialidad_id: int,
         db: Session = Depends(get_db)
 ):
     """Obtiene una especialidad por ID"""
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
-
+    
     if not especialidad:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Especialidad no encontrada"
         )
-
+    
     return especialidad
 
 
@@ -45,15 +45,10 @@ def get_especialidad(
 def create_especialidad(
         especialidad: EspecialidadCreate,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user)
+        current_user = Depends(require_admin)  # Solo admins pueden crear
 ):
-    """Crea una nueva especialidad (solo admin/coordinador)"""
-    if current_user["rol"] not in ["admin", "coordinador"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administradores y coordinadores pueden crear especialidades"
-        )
-
+    """Crea una nueva especialidad (solo admin)"""
+    # Verificar si ya existe
     existing = db.query(Especialidad).filter(Especialidad.nombre == especialidad.nombre).first()
     if existing:
         raise HTTPException(
@@ -79,15 +74,9 @@ def update_especialidad(
         especialidad_id: int,
         especialidad_update: EspecialidadUpdate,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user)
+        current_user = Depends(require_admin)  # Solo admins pueden actualizar
 ):
-    """Actualiza una especialidad (solo admin/coordinador)"""
-    if current_user["rol"] not in ["admin", "coordinador"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administradores y coordinadores pueden actualizar especialidades"
-        )
-
+    """Actualiza una especialidad (solo admin)"""
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:
@@ -96,7 +85,17 @@ def update_especialidad(
             detail="Especialidad no encontrada"
         )
 
+    # Verificar nombre duplicado si se está cambiando el nombre
     update_data = especialidad_update.model_dump(exclude_unset=True)
+    if "nombre" in update_data and update_data["nombre"] != especialidad.nombre:
+        existing = db.query(Especialidad).filter(
+            Especialidad.nombre == update_data["nombre"]
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe una especialidad con ese nombre"
+            )
 
     for field, value in update_data.items():
         setattr(especialidad, field, value)
@@ -107,19 +106,13 @@ def update_especialidad(
     return especialidad
 
 
-@router.delete("/{especialidad_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{especialidad_id}", status_code=status.HTTP_200_OK)
 def delete_especialidad(
         especialidad_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user)
+        current_user = Depends(require_admin)  # Solo admins pueden eliminar
 ):
-    """Desactiva una especialidad (no se elimina físicamente)"""
-    if current_user["rol"] not in ["admin", "coordinador"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administradores y coordinadores pueden eliminar especialidades"
-        )
-
+    """Desactiva una especialidad (baja lógica) - Solo admin"""
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:
@@ -128,7 +121,64 @@ def delete_especialidad(
             detail="Especialidad no encontrada"
         )
 
+    # Baja lógica (no eliminamos, solo desactivamos)
     especialidad.activa = 0
     db.commit()
 
-    return None
+    return {"message": "Especialidad desactivada exitosamente", "id": especialidad_id}
+
+
+@router.get("/{especialidad_id}/medicos", response_model=List[dict])
+def get_medicos_by_especialidad(
+        especialidad_id: int,
+        db: Session = Depends(get_db),
+        current_user = Depends(require_admin)  # Solo admins pueden ver esto
+):
+    """Obtiene todos los médicos que tienen una especialidad específica (solo admin)"""
+    especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
+
+    if not especialidad:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Especialidad no encontrada"
+        )
+
+    # Obtener médicos relacionados con esta especialidad
+    medicos = especialidad.medicos
+
+    # Formatear respuesta
+    medicos_data = []
+    for medico in medicos:
+        medico_info = {
+            "id": medico.id,
+            "nombre": medico.nombre,
+            "documento": medico.documento,
+            "email": medico.email,
+            "hospital_id": medico.hospital_id,
+            "hospital_nombre": medico.hospital.nombre if medico.hospital else None
+        }
+        medicos_data.append(medico_info)
+
+    return medicos_data
+
+
+@router.post("/{especialidad_id}/reactivar", response_model=EspecialidadResponse)
+def reactivar_especialidad(
+        especialidad_id: int,
+        db: Session = Depends(get_db),
+        current_user = Depends(require_admin)  # Solo admins
+):
+    """Reactiva una especialidad desactivada (solo admin)"""
+    especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
+
+    if not especialidad:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Especialidad no encontrada"
+        )
+
+    especialidad.activa = 1
+    db.commit()
+    db.refresh(especialidad)
+
+    return especialidad
