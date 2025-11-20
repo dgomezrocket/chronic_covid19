@@ -47,6 +47,9 @@ export interface Paciente extends Usuario {
   telefono?: string;
   latitud?: number;
   longitud?: number;
+  hospital_id?: number;
+  hospital?: Hospital;
+  medico_asignado?: Medico;
 }
 
 export interface Medico extends Usuario {
@@ -146,6 +149,11 @@ export interface Asignacion {
   paciente_id: number;
   medico_id: number;
   fecha_asignacion: string;
+  activo: boolean;          // 🆕 NUEVO
+  notas?: string;           // 🆕 NUEVO
+  fecha_desactivacion?: string;  // 🆕 NUEVO
+  paciente?: Paciente;      // 🆕 NUEVO
+  medico?: Medico;          // 🆕 NUEVO
 }
 
 // ========== TIPOS PARA ESPECIALIDADES ==========
@@ -238,4 +246,111 @@ export interface AdminUpdate {
   email?: string;
   telefono?: string;
   activo?: number;
+}
+
+// ========== 🆕 COORDINADORES (adicionales) ==========
+
+export interface CoordinadorCreate {
+  documento: string;
+  nombre: string;
+  email: string;
+  password: string;
+  hospital_id?: number;
+}
+
+export interface CoordinadorUpdate {
+  nombre?: string;
+  email?: string;
+  hospital_id?: number;
+}
+
+// ========== 🆕 ASIGNACIONES (adicionales) ==========
+
+export interface AsignacionCreate {
+  paciente_id: number;
+  medico_id: number;
+  notas?: string;
+}
+
+export interface AsignacionMedicoHospital {
+  medico_id: number;
+  hospital_id: number;
+}
+
+// ========== 🆕 INTERFACES EXTENDIDAS ==========
+
+export interface HospitalDetallado extends Hospital {
+  coordinadores?: Coordinador[];
+  medicos?: Medico[];
+  pacientes_count?: number;
+}
+
+export interface PacienteConAsignacion extends Paciente {
+  asignaciones?: Asignacion[];
+  medico_asignado?: Medico;
+}
+
+export interface MedicoConHospitales extends Medico {
+  hospitales: Hospital[];
+}
+
+export interface HospitalConDistancia extends Hospital {
+  distancia_km?: number;
+}
+
+export interface PacienteSinHospital {
+  id: number;
+  documento: string;
+  nombre: string;
+  email: string;
+  telefono?: string;
+  latitud?: number;
+  longitud?: number;
+  direccion?: string;
+  hospitales_cercanos?: HospitalConDistancia[];
+}
+
+export interface BuscarPacienteResult {
+  id: number;
+  documento: string;
+  nombre: string;
+  email: string;
+  telefono?: string;
+  hospital?: Hospital;
+  medico_asignado?: Medico;
+  asignacion_activa?: Asignacion;
+}
+
+// ========== 🆕 DASHBOARD DE COORDINADOR ==========
+
+export interface CoordinadorDashboard {
+  coordinador: Coordinador;
+  hospital?: HospitalDetallado;
+  total_medicos: number;
+  total_pacientes: number;
+  pacientes_asignados: number;
+  pacientes_sin_asignar: number;
+}
+
+export interface EstadisticasHospital {
+  hospital_id: number;
+  hospital_nombre: string;
+  total_medicos: number;
+  total_pacientes: number;
+  pacientes_asignados: number;
+  pacientes_sin_medico: number;
+  porcentaje_cobertura: number;
+  medicos_por_especialidad: Record<string, number>;
+}
+
+// ========== 🆕 RESPUESTAS DE OPERACIONES ==========
+
+export interface OperacionExitosa {
+  message: string;
+  id?: number;
+}
+
+export interface AsignacionSuccess {
+  message: string;
+  asignacion: Asignacion;
 }

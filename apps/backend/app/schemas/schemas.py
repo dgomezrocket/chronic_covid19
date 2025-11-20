@@ -1,10 +1,16 @@
+# ================================================================
+# IMPORTS
+# ================================================================
+
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import date, datetime
 from enum import Enum
 
 
-# ========== ENUMS ==========
+# ================================================================
+# ENUMS
+# ================================================================
 
 class RolEnum(str, Enum):
     paciente = "paciente"
@@ -113,11 +119,14 @@ class PacienteUpdate(BaseModel):
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     email: Optional[EmailStr] = None
+    hospital_id: Optional[int] = None
 
 
 class PacienteOut(PacienteBase):
     id: int
     rol: RolEnum
+    hospital_id: Optional[int] = None
+    hospital: Optional[HospitalOut] = None
 
     class Config:
         from_attributes = True
@@ -196,7 +205,9 @@ class CoordinadorOut(CoordinadorBase):
 CoordinadorResponse = CoordinadorOut
 
 
-# ========== AUTH SCHEMAS ==========
+# ================================================================
+# AUTH SCHEMAS
+# ================================================================
 
 class Token(BaseModel):
     access_token: str
@@ -222,7 +233,331 @@ class UserInfo(BaseModel):
         from_attributes = True
 
 
-# ========== MENSAJE SCHEMAS ==========
+# ================================================================
+# PACIENTE SCHEMAS
+# ================================================================
+
+class PacienteBase(BaseModel):
+    documento: str
+    nombre: str
+    fecha_nacimiento: date
+    genero: GeneroEnum
+    direccion: Optional[str] = None
+    email: EmailStr
+    telefono: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+
+
+class PacienteCreate(PacienteBase):
+    password: str
+
+
+class PacienteUpdate(BaseModel):
+    nombre: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    genero: Optional[GeneroEnum] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    email: Optional[EmailStr] = None
+    hospital_id: Optional[int] = None
+
+
+class PacienteOut(PacienteBase):
+    id: int
+    rol: RolEnum
+    hospital_id: Optional[int] = None
+    hospital: Optional["HospitalOut"] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+PacienteResponse = PacienteOut
+
+
+# ================================================================
+# MEDICO SCHEMAS
+# ================================================================
+
+class MedicoBase(BaseModel):
+    documento: str
+    nombre: str
+    email: EmailStr
+    telefono: Optional[str] = None
+
+
+class MedicoCreate(MedicoBase):
+    password: str
+    especialidad_ids: Optional[List[int]] = []
+    hospital_ids: Optional[List[int]] = []
+
+
+class MedicoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    telefono: Optional[str] = None
+    especialidad_ids: Optional[List[int]] = None
+    hospital_ids: Optional[List[int]] = None
+
+
+class MedicoOut(MedicoBase):
+    id: int
+    rol: RolEnum
+    especialidades: List["EspecialidadOut"] = []
+    hospitales: List["HospitalOut"] = []
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+MedicoResponse = MedicoOut
+
+
+# ================================================================
+# COORDINADOR SCHEMAS
+# ================================================================
+
+class CoordinadorBase(BaseModel):
+    documento: str
+    nombre: str
+    email: EmailStr
+    hospital_id: Optional[int] = None
+
+
+class CoordinadorCreate(CoordinadorBase):
+    """Schema para crear un coordinador (usado por admin)"""
+    password: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "documento": "1234567",
+                "nombre": "Dr. Juan Coordinador",
+                "email": "coordinador@hospital.com",
+                "password": "password123",
+                "hospital_id": 1,
+            }
+        }
+
+
+class CoordinadorUpdate(BaseModel):
+    """Schema para actualizar un coordinador"""
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    hospital_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CoordinadorOut(CoordinadorBase):
+    """Schema de salida para Coordinador"""
+    id: int
+    rol: RolEnum
+    hospital: Optional["HospitalOut"] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+CoordinadorResponse = CoordinadorOut
+
+
+# ================================================================
+# HOSPITAL SCHEMAS
+# ================================================================
+
+class HospitalBase(BaseModel):
+    nombre: str
+    codigo: Optional[str] = None
+    ciudad: Optional[str] = None
+    departamento: Optional[str] = None
+    barrio: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+
+
+class HospitalCreate(HospitalBase):
+    pass
+
+
+class HospitalUpdate(BaseModel):
+    nombre: Optional[str] = None
+    codigo: Optional[str] = None
+    ciudad: Optional[str] = None
+    departamento: Optional[str] = None
+    barrio: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+
+
+class HospitalOut(HospitalBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+HospitalResponse = HospitalOut
+
+
+# ================================================================
+# ESPECIALIDAD SCHEMAS
+# ================================================================
+
+class EspecialidadBase(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    activa: int = 1
+
+
+class EspecialidadCreate(EspecialidadBase):
+    pass
+
+
+class EspecialidadUpdate(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    activa: Optional[int] = None
+
+
+class EspecialidadOut(EspecialidadBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+EspecialidadResponse = EspecialidadOut
+
+
+# ================================================================
+# ASIGNACIÓN MEDICO–PACIENTE SCHEMAS
+# ================================================================
+
+class AsignacionBase(BaseModel):
+    """Schema base para Asignación"""
+    paciente_id: int
+    medico_id: int
+
+
+class AsignacionCreate(AsignacionBase):
+    """Schema para crear una asignación médico-paciente"""
+    notas: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "paciente_id": 1,
+                "medico_id": 1,
+                "notas": "Asignación para tratamiento de COVID-19 prolongado"
+            }
+        }
+
+
+class AsignacionUpdate(BaseModel):
+    """Schema para actualizar una asignación"""
+    activo: Optional[bool] = None
+    notas: Optional[str] = None
+    fecha_desactivacion: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AsignacionOut(AsignacionBase):
+    """Schema de salida para Asignación con datos completos"""
+    id: int
+    fecha_asignacion: str  # Mantener como string para compatibilidad
+    activo: bool = True
+    notas: Optional[str] = None
+    fecha_desactivacion: Optional[datetime] = None
+
+    # Datos del paciente (para mostrar en listas)
+    paciente: Optional[PacienteOut] = None
+
+    # Datos del médico (para mostrar en listas)
+    medico: Optional[MedicoResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Alias para compatibilidad
+AsignacionResponse = AsignacionOut
+
+
+# ================================================================
+# ASIGNACIÓN MEDICO–HOSPITAL SCHEMAS
+# ================================================================
+
+class AsignacionMedicoHospitalCreate(BaseModel):
+    """Schema para asignar un médico a un hospital"""
+    medico_id: int
+    hospital_id: int
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "medico_id": 1,
+                "hospital_id": 1
+            }
+        }
+
+
+class RemoverMedicoHospitalRequest(BaseModel):
+    """Schema para remover un médico de un hospital"""
+    medico_id: int
+    hospital_id: int
+
+
+# ================================================================
+# ADMIN SCHEMAS
+# ================================================================
+
+class AdminBase(BaseModel):
+    nombre: str
+    email: str
+    documento: str
+    telefono: Optional[str] = None
+
+
+class AdminCreate(AdminBase):
+    password: str
+
+
+class AdminUpdate(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    activo: Optional[int] = None
+
+
+class AdminOut(AdminBase):
+    id: int
+    activo: int
+    fecha_creacion: datetime
+    rol: RolEnum
+
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
+# MENSAJE SCHEMAS
+# ================================================================
 
 class MensajeBase(BaseModel):
     contenido: str
@@ -234,7 +569,7 @@ class MensajeCreate(MensajeBase):
     pass
 
 
-class MensajeOut(MensajeBase):
+class MensajeOut(BaseModel):
     id: int
     timestamp: str
     leido: int
@@ -247,18 +582,20 @@ class MensajeOut(MensajeBase):
 MensajeResponse = MensajeOut
 
 
-# ========== FORMULARIO SCHEMAS ==========
+# ================================================================
+# FORMULARIOS SCHEMAS
+# ================================================================
 
 class FormularioBase(BaseModel):
     tipo: str
     preguntas: dict
 
 
-class FormularioCreate(FormularioBase):
+class FormularioCreate(BaseModel):
     creador_id: Optional[int] = None
 
 
-class FormularioOut(FormularioBase):
+class FormularioOut(BaseModel):
     id: int
     fecha_creacion: str
     creador_id: Optional[int] = None
@@ -277,11 +614,11 @@ class RespuestaFormularioBase(BaseModel):
     respuestas: dict
 
 
-class RespuestaFormularioCreate(RespuestaFormularioBase):
+class RespuestaFormularioCreate(BaseModel):
     pass
 
 
-class RespuestaFormularioOut(RespuestaFormularioBase):
+class RespuestaFormularioOut(BaseModel):
     id: int
     timestamp: str
 
@@ -293,51 +630,237 @@ class RespuestaFormularioOut(RespuestaFormularioBase):
 RespuestaFormularioResponse = RespuestaFormularioOut
 
 
-# ========== ASIGNACION SCHEMAS ==========
+# ================================================================
+# SCHEMAS EXTENDIDOS CON RELACIONES
+# ================================================================
 
-class AsignacionBase(BaseModel):
-    paciente_id: int
-    medico_id: int
+class PacienteConAsignacionOut(PacienteOut):
+    """Paciente con información de su hospital y médico asignado"""
+    asignaciones: Optional[List[AsignacionOut]] = []
 
-
-class AsignacionCreate(AsignacionBase):
-    pass
-
-
-class AsignacionOut(AsignacionBase):
-    id: int
-    fecha_asignacion: str
+    # Propiedad computada para obtener el médico actualmente asignado
+    @property
+    def medico_asignado(self):
+        asignacion_activa = next((a for a in self.asignaciones if a.activo), None)
+        return asignacion_activa.medico if asignacion_activa else None
 
     class Config:
         from_attributes = True
 
 
-# Alias para compatibilidad
-AsignacionResponse = AsignacionOut
+class HospitalDetalladoOut(HospitalOut):
+    """Hospital con información detallada de coordinadores, médicos y pacientes"""
+    coordinadores: List[CoordinadorOut] = []
+    medicos: List[MedicoResponse] = []
+    pacientes_count: int = 0
+
+    class Config:
+        from_attributes = True
 
 
-# ========== SCHEMAS DE ADMIN ==========
+class HospitalOutExtended(HospitalOut):
+    """Hospital con contadores de médicos y pacientes"""
+    total_medicos: int = 0
+    total_pacientes: int = 0
+    total_coordinadores: int = 0
 
-class AdminBase(BaseModel):
-    nombre: str
-    email: str
-    documento: str
-    telefono: Optional[str] = None
+    class Config:
+        from_attributes = True
 
-class AdminCreate(AdminBase):
-    password: str
 
-class AdminUpdate(BaseModel):
-    nombre: Optional[str] = None
-    email: Optional[str] = None
-    telefono: Optional[str] = None
-    activo: Optional[int] = None
+class MedicoConHospitalesOut(MedicoResponse):
+    """Médico con información de hospitales donde trabaja"""
+    hospitales: List[HospitalOut] = []
 
-class AdminOut(AdminBase):
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
+# SCHEMAS PARA BÚSQUEDAS Y FILTROS
+# ================================================================
+
+class HospitalConDistanciaOut(HospitalOut):
+    """Hospital con distancia calculada desde un punto"""
+    distancia_km: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PacienteSinHospitalOut(BaseModel):
+    """Paciente sin hospital asignado con distancias a hospitales cercanos"""
     id: int
-    activo: int
-    fecha_creacion: datetime
-    rol: RolEnum
+    documento: str
+    nombre: str
+    email: EmailStr
+    telefono: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    direccion: Optional[str] = None
+
+    # Hospitales cercanos con distancias
+    hospitales_cercanos: List[HospitalConDistanciaOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class BuscarPacienteOut(BaseModel):
+    """Resultado de búsqueda de paciente con información de asignaciones"""
+    id: int
+    documento: str
+    nombre: str
+    email: EmailStr
+    telefono: Optional[str] = None
+
+    # Hospital y médico asignado
+    hospital: Optional[HospitalOut] = None
+    medico_asignado: Optional[MedicoResponse] = None
+    asignacion_activa: Optional[AsignacionOut] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PacienteUpdateExtended(BaseModel):
+    """Schema extendido para actualizar paciente (incluye hospital)"""
+    nombre: Optional[str] = None
+    fecha_nacimiento: Optional[str] = None
+    genero: Optional[GeneroEnum] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[EmailStr] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    hospital_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
+# DASHBOARD DE COORDINADOR
+# ================================================================
+
+class CoordinadorDashboardOut(BaseModel):
+    """Dashboard del coordinador con estadísticas"""
+    coordinador: CoordinadorOut
+    hospital: Optional[HospitalDetalladoOut] = None
+
+    # Estadísticas
+    total_medicos: int = 0
+    total_pacientes: int = 0
+    pacientes_asignados: int = 0
+    pacientes_sin_asignar: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class MedicosFiltradosOut(BaseModel):
+    """Lista de médicos filtrados por hospital y/o especialidad"""
+    total: int
+    medicos: List[MedicoConHospitalesOut]
+
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
+# RESPUESTAS DE OPERACIONES
+# ================================================================
+
+class AsignacionSuccessResponse(BaseModel):
+    """Respuesta exitosa de una asignación"""
+    message: str
+    asignacion: AsignacionOut
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Médico asignado exitosamente al paciente",
+                "asignacion": {
+                    "id": 1,
+                    "paciente_id": 1,
+                    "medico_id": 1,
+                    "fecha_asignacion": "2025-01-18T10:30:00",
+                    "activo": True
+                }
+            }
+        }
+
+
+class OperacionExitosaResponse(BaseModel):
+    """Respuesta genérica para operaciones exitosas"""
+    message: str
+    id: Optional[int] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Operación realizada exitosamente",
+                "id": 1
+            }
+        }
+
+
+# ================================================================
+# SCHEMAS PARA VALIDACIÓN DE PERMISOS
+# ================================================================
+
+class VerificarPermisoRequest(BaseModel):
+    """Schema para verificar permisos de un coordinador"""
+    coordinador_id: int
+    hospital_id: int
+
+
+class VerificarPermisoResponse(BaseModel):
+    """Respuesta de verificación de permisos"""
+    tiene_permiso: bool
+    mensaje: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "tiene_permiso": True,
+                "mensaje": "El coordinador tiene permiso para operar en este hospital"
+            }
+        }
+
+
+# ================================================================
+# REPORTES Y ESTADÍSTICAS
+# ================================================================
+
+class EstadisticasHospitalOut(BaseModel):
+    """Estadísticas de un hospital"""
+    hospital_id: int
+    hospital_nombre: str
+    total_medicos: int
+    total_pacientes: int
+    pacientes_asignados: int
+    pacientes_sin_medico: int
+    porcentaje_cobertura: float
+
+    medicos_por_especialidad: Dict[str, int] = {}
+
+    class Config:
+        from_attributes = True
+
+
+class EstadisticasGeneralesOut(BaseModel):
+    """Estadísticas generales del sistema"""
+    total_hospitales: int
+    total_coordinadores: int
+    total_medicos: int
+    total_pacientes: int
+    total_asignaciones_activas: int
+
+    pacientes_con_hospital: int
+    pacientes_sin_hospital: int
+    pacientes_con_medico: int
+    pacientes_sin_medico: int
 
     class Config:
         from_attributes = True

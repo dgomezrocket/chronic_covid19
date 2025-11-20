@@ -1,6 +1,7 @@
 import enum
-from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table
+from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.db.db import Base
 from datetime import datetime
 
@@ -57,10 +58,15 @@ class Paciente(Base):
     hashed_password = Column(String, nullable=False)
     rol = Column(Enum(RolEnum), default=RolEnum.paciente, nullable=False)
 
+    hospital_id = Column(Integer, ForeignKey("hospitales.id"), nullable=True)
+
+
     # Relaciones
     formularios = relationship("RespuestaFormulario", back_populates="paciente")
     mensajes = relationship("Mensaje", back_populates="paciente")
     asignaciones = relationship("Asignacion", back_populates="paciente")
+
+    hospital = relationship("Hospital", back_populates="pacientes")
 
 
 class Especialidad(Base):
@@ -126,6 +132,7 @@ class Hospital(Base):
     # Relaciones
     medicos = relationship("Medico", secondary=medico_hospital, back_populates="hospitales")
     coordinadores = relationship("Coordinador", back_populates="hospital")
+    pacientes = relationship("Paciente", back_populates="hospital")
 
 
 class Asignacion(Base):
@@ -134,7 +141,12 @@ class Asignacion(Base):
     id = Column(Integer, primary_key=True, index=True)
     paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False)
     medico_id = Column(Integer, ForeignKey("medicos.id"), nullable=False)
-    fecha_asignacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_asignacion = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+
+    # 🆕 NUEVO: Información adicional
+    notas = Column(String, nullable=True)  # Notas de la asignación
+    fecha_desactivacion = Column(DateTime(timezone=True), nullable=True)
 
     # Relaciones
     paciente = relationship("Paciente", back_populates="asignaciones")

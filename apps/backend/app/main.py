@@ -8,7 +8,9 @@ from app.routers import (
     hospitales,
     formularios,
     mensajes,
-admins
+    admins,
+    coordinadores,
+    asignaciones
 )
 
 app = FastAPI(
@@ -42,6 +44,8 @@ app.include_router(formularios.router, prefix="/formularios", tags=["formularios
 app.include_router(mensajes.router, prefix="/mensajes", tags=["mensajes"])
 app.include_router(admins.router, prefix="/admins", tags=["admins"])
 
+app.include_router(coordinadores.router, prefix="/coordinadores", tags=["Coordinadores"])
+app.include_router(asignaciones.router, prefix="/asignaciones", tags=["Asignaciones"])
 
 @app.get("/")
 async def root():

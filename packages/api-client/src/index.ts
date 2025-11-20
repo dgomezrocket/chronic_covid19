@@ -16,7 +16,20 @@ import {
   HospitalUpdate,
   Admin,
   AdminCreate,
-  AdminUpdate
+  AdminUpdate,
+    Coordinador,
+  CoordinadorCreate,
+  CoordinadorUpdate,
+  CoordinadorDashboard,
+  HospitalDetallado,
+  Asignacion,
+  AsignacionCreate,
+  AsignacionMedicoHospital,
+  PacienteSinHospital,
+  BuscarPacienteResult,
+  HospitalConDistancia,
+  OperacionExitosa,
+  AsignacionSuccess
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -423,6 +436,400 @@ clearToken() {
       throw this.handleError(error);
     }
   }
+
+
+  // ========== COORDINADORES ENDPOINTS ==========
+
+  /**
+   * Crea un nuevo coordinador (solo admin)
+   */
+  async createCoordinador(data: CoordinadorCreate): Promise<Coordinador> {
+    try {
+      const response = await this.client.post<Coordinador>('/coordinadores/', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene todos los coordinadores (solo admin)
+   */
+  async getAllCoordinadores(skip: number = 0, limit: number = 100): Promise<Coordinador[]> {
+    try {
+      const response = await this.client.get<Coordinador[]>(
+        `/coordinadores/?skip=${skip}&limit=${limit}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene un coordinador por ID (solo admin)
+   */
+  async getCoordinadorById(id: number): Promise<Coordinador> {
+    try {
+      const response = await this.client.get<Coordinador>(`/coordinadores/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Actualiza un coordinador (solo admin)
+   */
+  async updateCoordinador(id: number, data: CoordinadorUpdate): Promise<Coordinador> {
+    try {
+      const response = await this.client.put<Coordinador>(`/coordinadores/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Asigna un hospital a un coordinador (solo admin)
+   */
+  async asignarHospitalACoordinador(coordinadorId: number, hospitalId: number): Promise<Coordinador> {
+    try {
+      const response = await this.client.put<Coordinador>(
+        `/coordinadores/${coordinadorId}/hospital?hospital_id=${hospitalId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Elimina un coordinador (solo admin)
+   */
+  async deleteCoordinador(id: number): Promise<{ message: string; id: number }> {
+    try {
+      const response = await this.client.delete<{ message: string; id: number }>(
+        `/coordinadores/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene el perfil del coordinador autenticado
+   */
+  async getCoordinadorMe(): Promise<Coordinador> {
+    try {
+      const response = await this.client.get<Coordinador>('/coordinadores/me');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene el dashboard del coordinador con estadísticas
+   */
+  async getCoordinadorDashboard(): Promise<CoordinadorDashboard> {
+    try {
+      const response = await this.client.get<CoordinadorDashboard>('/coordinadores/me/dashboard');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene el hospital asignado al coordinador con información detallada
+   */
+  async getCoordinadorHospital(): Promise<HospitalDetallado> {
+    try {
+      const response = await this.client.get<HospitalDetallado>('/coordinadores/me/hospital');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene los médicos del hospital del coordinador
+   * @param especialidadId - Opcional: filtrar por especialidad
+   */
+  async getCoordinadorMedicos(especialidadId?: number): Promise<Medico[]> {
+    try {
+      const url = especialidadId
+        ? `/coordinadores/me/medicos?especialidad_id=${especialidadId}`
+        : '/coordinadores/me/medicos';
+
+      const response = await this.client.get<Medico[]>(url);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene los pacientes del hospital del coordinador
+   */
+  async getCoordinadorPacientes(): Promise<Paciente[]> {
+    try {
+      const response = await this.client.get<Paciente[]>('/coordinadores/me/pacientes');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+
+  // ========== ASIGNACIONES ENDPOINTS ==========
+
+  /**
+   * Asigna un médico a un hospital (coordinador)
+   */
+  async asignarMedicoAHospital(data: AsignacionMedicoHospital): Promise<Medico> {
+    try {
+      const response = await this.client.post<Medico>('/asignaciones/medico-hospital', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Remueve un médico de un hospital (coordinador)
+   */
+  async removerMedicoDeHospital(data: AsignacionMedicoHospital): Promise<OperacionExitosa> {
+    try {
+      const response = await this.client.delete<OperacionExitosa>(
+        '/asignaciones/medico-hospital',
+        { data }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Asigna un paciente a un hospital (coordinador)
+   */
+  async asignarPacienteAHospital(
+    pacienteId: number,
+    hospitalId: number
+  ): Promise<OperacionExitosa> {
+    try {
+      const response = await this.client.post<OperacionExitosa>(
+        `/asignaciones/paciente-hospital?paciente_id=${pacienteId}&hospital_id=${hospitalId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Asigna un médico a un paciente (coordinador)
+   */
+  async asignarMedicoAPaciente(data: AsignacionCreate): Promise<AsignacionSuccess> {
+    try {
+      const response = await this.client.post<AsignacionSuccess>(
+        '/asignaciones/medico-paciente',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene la asignación activa de un paciente
+   */
+  async getAsignacionPaciente(pacienteId: number): Promise<Asignacion> {
+    try {
+      const response = await this.client.get<Asignacion>(
+        `/asignaciones/paciente/${pacienteId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Desactiva una asignación médico-paciente (coordinador)
+   */
+  async desasignarMedicoDePaciente(asignacionId: number): Promise<OperacionExitosa> {
+    try {
+      const response = await this.client.delete<OperacionExitosa>(
+        `/asignaciones/medico-paciente/${asignacionId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Busca pacientes por documento o nombre
+   */
+  async buscarPaciente(query: string): Promise<BuscarPacienteResult[]> {
+    try {
+      const response = await this.client.get<BuscarPacienteResult[]>(
+        `/asignaciones/buscar-paciente?q=${encodeURIComponent(query)}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene pacientes sin hospital asignado con hospitales cercanos
+   * @param lat - Latitud (opcional)
+   * @param lon - Longitud (opcional)
+   * @param radioKm - Radio de búsqueda en km (por defecto 50)
+   */
+  async getPacientesSinHospital(
+    lat?: number,
+    lon?: number,
+    radioKm: number = 50
+  ): Promise<PacienteSinHospital[]> {
+    try {
+      let url = '/asignaciones/pacientes-sin-hospital';
+      const params = new URLSearchParams();
+
+      if (lat !== undefined) params.append('lat', lat.toString());
+      if (lon !== undefined) params.append('lon', lon.toString());
+      params.append('radio_km', radioKm.toString());
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await this.client.get<PacienteSinHospital[]>(url);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene médicos disponibles de un hospital
+   * @param hospitalId - ID del hospital
+   * @param especialidadId - Opcional: filtrar por especialidad
+   */
+  async getMedicosDisponibles(
+    hospitalId: number,
+    especialidadId?: number
+  ): Promise<Medico[]> {
+    try {
+      let url = `/asignaciones/medicos-disponibles?hospital_id=${hospitalId}`;
+
+      if (especialidadId) {
+        url += `&especialidad_id=${especialidadId}`;
+      }
+
+      const response = await this.client.get<Medico[]>(url);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene un listado de asignaciones con filtros opcionales
+   * @param filters - Filtros opcionales (paciente_id, medico_id, activo)
+   * @param skip - Número de registros a saltar
+   * @param limit - Límite de registros a obtener
+   */
+  async getAsignaciones(
+    filters?: {
+      paciente_id?: number;
+      medico_id?: number;
+      activo?: boolean;
+    },
+    skip: number = 0,
+    limit: number = 100
+  ): Promise<Asignacion[]> {
+    try {
+      const params = new URLSearchParams();
+      params.append('skip', skip.toString());
+      params.append('limit', limit.toString());
+
+      if (filters?.paciente_id) {
+        params.append('paciente_id', filters.paciente_id.toString());
+      }
+      if (filters?.medico_id) {
+        params.append('medico_id', filters.medico_id.toString());
+      }
+      if (filters?.activo !== undefined) {
+        params.append('activo', filters.activo.toString());
+      }
+
+      const response = await this.client.get<Asignacion[]>(
+        `/asignaciones/?${params.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene hospitales cercanos a una ubicación específica
+   * @param lat - Latitud
+   * @param lon - Longitud
+   * @param radioKm - Radio de búsqueda en km (por defecto 50)
+   */
+  async getHospitalesCercanosConDistancia(
+    lat: number,
+    lon: number,
+    radioKm: number = 50
+  ): Promise<HospitalConDistancia[]> {
+    try {
+      // Primero obtenemos hospitales cercanos usando el endpoint existente
+      const hospitales = await this.getHospitalesCercanos(lat, lon, radioKm);
+
+      // Calculamos las distancias (aproximadas) en el cliente
+      const hospitalesConDistancia: HospitalConDistancia[] = hospitales.map(hospital => {
+        let distancia_km: number | undefined;
+
+        if (hospital.latitud && hospital.longitud) {
+          // Fórmula de Haversine simplificada (aproximación)
+          const R = 6371; // Radio de la Tierra en km
+          const dLat = (hospital.latitud - lat) * (Math.PI / 180);
+          const dLon = (hospital.longitud - lon) * (Math.PI / 180);
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat * (Math.PI / 180)) *
+              Math.cos(hospital.latitud * (Math.PI / 180)) *
+              Math.sin(dLon / 2) *
+              Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          distancia_km = R * c;
+        }
+
+        return {
+          ...hospital,
+          distancia_km,
+        };
+      });
+
+      // Ordenar por distancia (más cercano primero)
+      return hospitalesConDistancia.sort((a, b) => {
+        if (a.distancia_km === undefined) return 1;
+        if (b.distancia_km === undefined) return -1;
+        return a.distancia_km - b.distancia_km;
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
 
   // ========== ERROR HANDLING ==========
 

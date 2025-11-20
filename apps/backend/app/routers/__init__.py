@@ -1,2 +1,2 @@
-# Routers will be imported here
-
+from app.routers import coordinadores
+from app.routers import asignaciones

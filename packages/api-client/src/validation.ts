@@ -77,3 +77,109 @@ export const updateAdminSchema = z.object({
 });
 
 export type UpdateAdminFormData = z.infer<typeof updateAdminSchema>;
+
+
+// ========== 🆕 COORDINADOR SCHEMAS ==========
+
+/**
+ * Schema para registrar un coordinador (solo admin)
+ */
+export const registerCoordinadorSchema = z.object({
+  documento: z.string()
+    .min(3, 'El documento debe tener al menos 3 caracteres')
+    .max(20, 'El documento no puede tener más de 20 caracteres'),
+  nombre: z.string()
+    .min(3, 'El nombre debe tener al menos 3 caracteres')
+    .max(100, 'El nombre no puede tener más de 100 caracteres'),
+  email: z.string()
+    .email('Debe ser un email válido'),
+  password: z.string()
+    .min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  hospital_id: z.number()
+    .int('El ID del hospital debe ser un número entero')
+    .positive('El ID del hospital debe ser positivo')
+    .optional(),
+});
+
+/**
+ * Schema para actualizar un coordinador (solo admin)
+ */
+export const updateCoordinadorSchema = z.object({
+  nombre: z.string()
+    .min(3, 'El nombre debe tener al menos 3 caracteres')
+    .max(100, 'El nombre no puede tener más de 100 caracteres')
+    .optional(),
+  email: z.string()
+    .email('Debe ser un email válido')
+    .optional(),
+  hospital_id: z.number()
+    .int('El ID del hospital debe ser un número entero')
+    .positive('El ID del hospital debe ser positivo')
+    .optional(), // ✅ FIX: Removido .nullable()
+});
+
+// ========== 🆕 ASIGNACION SCHEMAS ==========
+
+/**
+ * Schema para asignar un médico a un hospital
+ */
+export const asignarMedicoHospitalSchema = z.object({
+  medico_id: z.number()
+    .int('El ID del médico debe ser un número entero')
+    .positive('El ID del médico debe ser positivo'),
+  hospital_id: z.number()
+    .int('El ID del hospital debe ser un número entero')
+    .positive('El ID del hospital debe ser positivo'),
+});
+
+/**
+ * Schema para asignar un médico a un paciente
+ */
+export const asignarMedicoPacienteSchema = z.object({
+  paciente_id: z.number()
+    .int('El ID del paciente debe ser un número entero')
+    .positive('El ID del paciente debe ser positivo'),
+  medico_id: z.number()
+    .int('El ID del médico debe ser un número entero')
+    .positive('El ID del médico debe ser positivo'),
+  notas: z.string()
+    .max(500, 'Las notas no pueden tener más de 500 caracteres')
+    .optional(),
+});
+
+/**
+ * Schema para búsqueda de pacientes
+ */
+export const buscarPacienteSchema = z.object({
+  query: z.string()
+    .min(1, 'Debe ingresar al menos 1 carácter para buscar')
+    .max(50, 'La búsqueda no puede tener más de 50 caracteres'),
+});
+
+/**
+ * Schema para obtener pacientes sin hospital
+ */
+export const pacientesSinHospitalSchema = z.object({
+  lat: z.number()
+    .min(-90, 'Latitud inválida')
+    .max(90, 'Latitud inválida')
+    .optional(),
+  lon: z.number()
+    .min(-180, 'Longitud inválida')
+    .max(180, 'Longitud inválida')
+    .optional(),
+  radio_km: z.number()
+    .positive('El radio debe ser positivo')
+    .max(500, 'El radio no puede ser mayor a 500 km')
+    .optional()
+    .default(50),
+});
+
+// ========== TIPOS INFERIDOS ==========
+
+export type RegisterCoordinadorFormData = z.infer<typeof registerCoordinadorSchema>;
+export type UpdateCoordinadorFormData = z.infer<typeof updateCoordinadorSchema>;
+export type AsignarMedicoHospitalFormData = z.infer<typeof asignarMedicoHospitalSchema>;
+export type AsignarMedicoPacienteFormData = z.infer<typeof asignarMedicoPacienteSchema>;
+export type BuscarPacienteFormData = z.infer<typeof buscarPacienteSchema>;
+export type PacientesSinHospitalFormData = z.infer<typeof pacientesSinHospitalSchema>;
