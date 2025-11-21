@@ -109,6 +109,7 @@ class Coordinador(Base):
     documento = Column(String, unique=True, index=True, nullable=False)
     nombre = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    telefono = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     hospital_id = Column(Integer, ForeignKey("hospitales.id"), nullable=True)
     rol = Column(Enum(RolEnum), default=RolEnum.coordinador, nullable=False)
@@ -126,6 +127,8 @@ class Hospital(Base):
     departamento = Column(String, nullable=True)
     ciudad = Column(String, nullable=True)
     barrio = Column(String, nullable=True)
+    direccion = Column(String, nullable=True)
+    telefono = Column(String, nullable=True)
     latitud = Column(Float, nullable=True)
     longitud = Column(Float, nullable=True)
 

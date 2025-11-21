@@ -57,6 +57,11 @@ export default function ProfilePage() {
         const medicoData = await apiClient.getMedico(user.id);
         console.log('✅ Datos del médico recibidos:', medicoData);
         setProfileData(medicoData);
+      } else if (user.rol === RolEnum.COORDINADOR) {
+      console.log('👤 Obteniendo datos completos del coordinador con ID:', user.id);
+      const coordinadorData = await apiClient.getCoordinadorById(user.id);
+      console.log('✅ Datos del coordinador recibidos:', coordinadorData);
+      setProfileData(coordinadorData);
       } else if (user.rol === RolEnum.ADMIN) {
         console.log('🔑 Obteniendo datos completos del administrador con ID:', user.id);
         console.log('🔑 Token antes de llamar getAdmin:', apiClient.getToken()?.substring(0, 20) + '...');

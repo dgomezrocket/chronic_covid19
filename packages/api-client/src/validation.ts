@@ -81,6 +81,15 @@ export type UpdateAdminFormData = z.infer<typeof updateAdminSchema>;
 
 // ========== 🆕 COORDINADOR SCHEMAS ==========
 
+// ========== UPDATE COORDINADOR SCHEMA (para que el coordinador pueda editar su propio perfil) ==========
+export const updateCoordinadorProfileSchema = z.object({
+  nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').optional(),
+  email: z.string().email('Email inválido').optional(),
+  telefono: z.string().optional(),
+});
+
+export type UpdateCoordinadorProfileFormData = z.infer<typeof updateCoordinadorProfileSchema>;
+
 /**
  * Schema para registrar un coordinador (solo admin)
  */
@@ -93,6 +102,10 @@ export const registerCoordinadorSchema = z.object({
     .max(100, 'El nombre no puede tener más de 100 caracteres'),
   email: z.string()
     .email('Debe ser un email válido'),
+  telefono: z.string()
+    .min(6, 'El teléfono debe tener al menos 6 caracteres')
+    .max(20, 'El teléfono no puede tener más de 20 caracteres')
+    .optional(),
   password: z.string()
     .min(6, 'La contraseña debe tener al menos 6 caracteres'),
   hospital_id: z.number()
@@ -105,12 +118,20 @@ export const registerCoordinadorSchema = z.object({
  * Schema para actualizar un coordinador (solo admin)
  */
 export const updateCoordinadorSchema = z.object({
+  documento: z.string()  // ⬅️ AGREGAR ESTA LÍNEA
+    .min(3, 'El documento debe tener al menos 3 caracteres')
+    .max(20, 'El documento no puede tener más de 20 caracteres')
+    .optional(),
   nombre: z.string()
     .min(3, 'El nombre debe tener al menos 3 caracteres')
     .max(100, 'El nombre no puede tener más de 100 caracteres')
     .optional(),
   email: z.string()
     .email('Debe ser un email válido')
+    .optional(),
+  telefono: z.string()
+    .min(6, 'El teléfono debe tener al menos 6 caracteres')
+    .max(20, 'El teléfono no puede tener más de 20 caracteres')
     .optional(),
   hospital_id: z.number()
     .int('El ID del hospital debe ser un número entero')

@@ -204,9 +204,21 @@ export default function HospitalesAdminPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Gestión de Hospitales</h1>
-              <p className="mt-2 text-gray-600">Administra los hospitales del sistema</p>
+            <div className="flex items-center space-x-4">
+              {/* Botón Volver al Dashboard */}
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span className="font-medium">Volver</span>
+              </button>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Gestión de Hospitales</h1>
+                <p className="mt-2 text-gray-600">Administra los hospitales del sistema</p>
+              </div>
             </div>
             <button
               onClick={handleOpenCreateModal}

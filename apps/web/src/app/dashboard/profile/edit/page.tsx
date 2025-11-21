@@ -15,7 +15,9 @@ import {
   updateMedicoSchema,
   UpdateMedicoFormData,
   updateAdminSchema,
-  UpdateAdminFormData
+  UpdateAdminFormData,
+  updateCoordinadorProfileSchema,
+  UpdateCoordinadorProfileFormData
 } from '@chronic-covid19/api-client/dist/validation';
 import { RolEnum, GeneroEnum, Especialidad } from '@chronic-covid19/shared-types';
 
@@ -49,6 +51,8 @@ export default function EditProfilePage() {
         return updatePacienteSchema;
       case RolEnum.MEDICO:
         return updateMedicoSchema;
+      case RolEnum.COORDINADOR:
+      return updateCoordinadorProfileSchema;
       case RolEnum.ADMIN:
         return updateAdminSchema;
       default:
@@ -56,16 +60,16 @@ export default function EditProfilePage() {
     }
   };
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    formState: { errors },
-    reset,
-  } = useForm<UpdatePacienteFormData | UpdateMedicoFormData | UpdateAdminFormData>({
-    resolver: zodResolver(getSchemaForRole()),
-  });
+const {
+  register,
+  handleSubmit,
+  setValue,
+  watch,
+  formState: { errors },
+  reset,
+} = useForm<UpdatePacienteFormData | UpdateMedicoFormData | UpdateAdminFormData | UpdateCoordinadorProfileFormData>({
+  resolver: zodResolver(getSchemaForRole()),
+});
 
   const watchedFields = watch();
 
@@ -125,6 +129,11 @@ export default function EditProfilePage() {
           } else if (user.rol === RolEnum.ADMIN) {
             data = await apiClient.getAdmin(user.id);
             console.log('👑 Datos del administrador cargados:', data);
+          } else if (user.rol === RolEnum.COORDINADOR) {
+              console.log('👤 Cargando datos del coordinador para editar...');
+              data = await apiClient.getCoordinadorById(user.id);
+              console.log('✅ Datos del coordinador recibidos:', data);
+
           } else {
             data = await apiClient.getMe();
           }
@@ -238,6 +247,17 @@ export default function EditProfilePage() {
 
         const response = await apiClient.updateMedico(user.id, updateData);
         console.log('✅ Respuesta del servidor (Médico):', response);
+
+      } else if (user.rol === RolEnum.COORDINADOR) {
+          const updateData: UpdateCoordinadorProfileFormData = {
+            nombre: data.nombre,
+            email: data.email,
+            telefono: data.telefono,
+          };
+
+          console.log('📤 Enviando actualización de COORDINADOR:', updateData);
+          const response = await apiClient.updateCoordinador(user.id, updateData);
+          console.log('✅ Respuesta del servidor (Coordinador):', response);
 
       } else if (user.rol === RolEnum.ADMIN) {
         // Para administradores: solo datos básicos (nombre, email, telefono)

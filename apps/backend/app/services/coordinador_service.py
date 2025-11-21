@@ -22,7 +22,6 @@ from app.schemas.schemas import (
     CoordinadorCreate,
     CoordinadorUpdate,
     AsignacionCreate,
-    TokenData
 )
 from app.core.security import get_password_hash
 
@@ -98,9 +97,9 @@ def obtener_hospitales_cercanos(
 # ========== GESTIÓN DE COORDINADORES ==========
 
 def crear_coordinador(
-        db: Session,
-        coordinador_data: CoordinadorCreate,
-        admin_user: TokenData
+    db: Session,
+    coordinador_data: CoordinadorCreate,
+    admin_user: dict
 ) -> Coordinador:
     """
     Crea un nuevo coordinador (solo admin puede hacerlo).
@@ -108,7 +107,7 @@ def crear_coordinador(
     Args:
         db: Sesión de base de datos
         coordinador_data: Datos del coordinador a crear
-        admin_user: Usuario admin que está creando el coordinador
+        admin_user: Usuario admin que está creando el coordinador (diccionario)
 
     Returns:
         Coordinador creado
@@ -117,8 +116,8 @@ def crear_coordinador(
         HTTPException: Si el usuario no es admin, si el documento/email ya existe,
                       o si el hospital no existe
     """
-    # Verificar que es admin
-    if admin_user.rol != RolEnum.admin:
+    # ✅ CORRECCIÓN: Usar admin_user["rol"] en lugar de admin_user.rol
+    if admin_user["rol"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo los administradores pueden crear coordinadores"
@@ -186,13 +185,22 @@ def asignar_hospital_a_coordinador(
         db: Session,
         coordinador_id: int,
         hospital_id: int,
-        admin_user: TokenData
+        admin_user: dict
 ) -> Coordinador:
     """
     Asigna un hospital a un coordinador (solo admin).
+    
+    Args:
+        db: Sesión de base de datos
+        coordinador_id: ID del coordinador
+        hospital_id: ID del hospital a asignar
+        admin_user: Usuario admin (diccionario)
+    
+    Returns:
+        Coordinador actualizado
     """
-    # Verificar que es admin
-    if admin_user.rol != RolEnum.admin:
+    # ✅ CORRECCIÓN: Usar admin_user["rol"] en lugar de admin_user.rol
+    if admin_user["rol"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo los administradores pueden asignar hospitales a coordinadores"
@@ -234,19 +242,27 @@ def asignar_hospital_a_coordinador(
 
 
 def obtener_coordinador_actual(
-        db: Session,
-        user: TokenData
+    db: Session,
+    current_user: dict
 ) -> Coordinador:
     """
     Obtiene el coordinador autenticado actual.
+    
+    Args:
+        db: Sesión de base de datos
+        current_user: Usuario actual (diccionario)
+    
+    Returns:
+        Coordinador encontrado
     """
-    if user.rol != RolEnum.coordinador:
+    # ✅ CORRECCIÓN: Usar current_user["rol"] y current_user["id"]
+    if current_user["rol"] != "coordinador":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo coordinadores pueden acceder a esta función"
         )
 
-    coordinador = db.query(Coordinador).filter(Coordinador.id == user.id).first()
+    coordinador = db.query(Coordinador).filter(Coordinador.id == current_user["id"]).first()
     if not coordinador:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -274,10 +290,10 @@ def verificar_coordinador_hospital(
 # ========== GESTIÓN DE MÉDICOS EN HOSPITALES ==========
 
 def asignar_medico_a_hospital(
-        db: Session,
-        medico_id: int,
-        hospital_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    medico_id: int,
+    hospital_id: int,
+    coordinador_user: dict
 ) -> Medico:
     """
     Asigna un médico a un hospital (coordinador del hospital o admin).
@@ -320,10 +336,10 @@ def asignar_medico_a_hospital(
 
 
 def remover_medico_de_hospital(
-        db: Session,
-        medico_id: int,
-        hospital_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    medico_id: int,
+    hospital_id: int,
+    coordinador_user: dict
 ) -> Medico:
     """
     Remueve un médico de un hospital.
@@ -397,9 +413,9 @@ def obtener_medicos_del_hospital(
 # ========== GESTIÓN DE PACIENTES Y ASIGNACIONES ==========
 
 def obtener_pacientes_del_hospital(
-        db: Session,
-        hospital_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    hospital_id: int,
+    coordinador_user: dict
 ) -> List[Paciente]:
     """
     Obtiene los pacientes asignados a un hospital.
@@ -453,10 +469,10 @@ def obtener_pacientes_sin_hospital(
 
 
 def asignar_paciente_a_hospital(
-        db: Session,
-        paciente_id: int,
-        hospital_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    paciente_id: int,
+    hospital_id: int,
+    coordinador_user: dict
 ) -> Paciente:
     """
     Asigna un paciente a un hospital.
@@ -492,11 +508,11 @@ def asignar_paciente_a_hospital(
 
 
 def asignar_medico_a_paciente(
-        db: Session,
-        paciente_id: int,
-        medico_id: int,
-        coordinador_user: TokenData,
-        notas: Optional[str] = None
+    db: Session,
+    paciente_id: int,
+    medico_id: int,
+    coordinador_user: dict,
+    notas: Optional[str] = None
 ) -> Asignacion:
     """
     Asigna un médico a un paciente (solo si ambos pertenecen al hospital del coordinador).
@@ -583,9 +599,9 @@ def obtener_asignacion_paciente(
 
 
 def desasignar_medico_de_paciente(
-        db: Session,
-        asignacion_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    asignacion_id: int,
+    coordinador_user: dict
 ) -> Asignacion:
     """
     Desactiva una asignación médico-paciente.
@@ -637,10 +653,10 @@ def buscar_paciente(
 
 
 def obtener_medicos_disponibles(
-        db: Session,
-        hospital_id: int,
-        especialidad_id: Optional[int] = None,
-        coordinador_user: TokenData = None
+    db: Session,
+    hospital_id: int,
+    especialidad_id: Optional[int] = None,
+    coordinador_user: dict = None
 ) -> List[Medico]:
     """
     Obtiene médicos disponibles de un hospital, opcionalmente filtrados por especialidad.
@@ -655,9 +671,9 @@ def obtener_medicos_disponibles(
 # ========== ESTADÍSTICAS Y REPORTES ==========
 
 def obtener_estadisticas_hospital(
-        db: Session,
-        hospital_id: int,
-        coordinador_user: TokenData
+    db: Session,
+    hospital_id: int,
+    coordinador_user: dict
 ) -> dict:
     """
     Obtiene estadísticas de un hospital.

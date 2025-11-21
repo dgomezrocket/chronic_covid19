@@ -61,6 +61,7 @@ export interface Medico extends Usuario {
 
 export interface Coordinador extends Usuario {
   documento: string;
+  telefono?: string;
   hospital_id?: number;
   hospital?: Hospital;
 }
@@ -259,8 +260,10 @@ export interface CoordinadorCreate {
 }
 
 export interface CoordinadorUpdate {
+  documento?: string;
   nombre?: string;
   email?: string;
+  telefono?: string;
   hospital_id?: number;
 }
 

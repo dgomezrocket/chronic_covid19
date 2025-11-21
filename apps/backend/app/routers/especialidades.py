@@ -4,7 +4,7 @@ from typing import List
 from app.db.db import get_db
 from app.models.models import Especialidad, Medico
 from app.schemas.schemas import EspecialidadCreate, EspecialidadUpdate, EspecialidadResponse
-from app.core.deps import get_current_user, require_admin
+from app.core.security import get_current_user
 
 router = APIRouter()
 
@@ -45,9 +45,16 @@ def get_especialidad_by_id(
 def create_especialidad(
         especialidad: EspecialidadCreate,
         db: Session = Depends(get_db),
-        current_user = Depends(require_admin)  # Solo admins pueden crear
+        current_user: dict = Depends(get_current_user)
 ):
     """Crea una nueva especialidad (solo admin)"""
+    # ✅ AGREGAR: Verificación de rol admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden crear especialidades"
+        )
+    
     # Verificar si ya existe
     existing = db.query(Especialidad).filter(Especialidad.nombre == especialidad.nombre).first()
     if existing:
@@ -74,9 +81,16 @@ def update_especialidad(
         especialidad_id: int,
         especialidad_update: EspecialidadUpdate,
         db: Session = Depends(get_db),
-        current_user = Depends(require_admin)  # Solo admins pueden actualizar
+        current_user: dict = Depends(get_current_user)
 ):
     """Actualiza una especialidad (solo admin)"""
+    # ✅ AGREGAR: Verificación de rol admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden actualizar especialidades"
+        )
+    
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:
@@ -110,9 +124,16 @@ def update_especialidad(
 def delete_especialidad(
         especialidad_id: int,
         db: Session = Depends(get_db),
-        current_user = Depends(require_admin)  # Solo admins pueden eliminar
+        current_user: dict = Depends(get_current_user)
 ):
     """Desactiva una especialidad (baja lógica) - Solo admin"""
+    # ✅ AGREGAR: Verificación de rol admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden desactivar especialidades"
+        )
+    
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:
@@ -132,9 +153,19 @@ def delete_especialidad(
 def get_medicos_by_especialidad(
         especialidad_id: int,
         db: Session = Depends(get_db),
-        current_user = Depends(require_admin)  # Solo admins pueden ver esto
+        current_user: dict = Depends(get_current_user)  # ✅ CAMBIAR: Usar get_current_user
 ):
     """Obtiene todos los médicos que tienen una especialidad específica (solo admin)"""
+    print(f"🔍 Usuario autenticado: {current_user}")
+    print(f"🔍 Buscando especialidad ID: {especialidad_id}")
+    
+    # ✅ AGREGAR: Verificación de rol admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden ver esta información"
+        )
+    
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:
@@ -146,16 +177,20 @@ def get_medicos_by_especialidad(
     # Obtener médicos relacionados con esta especialidad
     medicos = especialidad.medicos
 
-    # Formatear respuesta
+    # Formatear respuesta - CORREGIDO
     medicos_data = []
     for medico in medicos:
+        # El médico puede tener múltiples hospitales (many-to-many)
+        # Tomamos el primero si existe
+        hospital_principal = medico.hospitales[0] if medico.hospitales else None
+        
         medico_info = {
             "id": medico.id,
             "nombre": medico.nombre,
             "documento": medico.documento,
             "email": medico.email,
-            "hospital_id": medico.hospital_id,
-            "hospital_nombre": medico.hospital.nombre if medico.hospital else None
+            "hospital_id": hospital_principal.id if hospital_principal else None,
+            "hospital_nombre": hospital_principal.nombre if hospital_principal else None
         }
         medicos_data.append(medico_info)
 
@@ -166,9 +201,15 @@ def get_medicos_by_especialidad(
 def reactivar_especialidad(
         especialidad_id: int,
         db: Session = Depends(get_db),
-        current_user = Depends(require_admin)  # Solo admins
+        current_user: dict = Depends(get_current_user)
 ):
     """Reactiva una especialidad desactivada (solo admin)"""
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden reactivar especialidades"
+        )
+    
     especialidad = db.query(Especialidad).filter(Especialidad.id == especialidad_id).first()
 
     if not especialidad:

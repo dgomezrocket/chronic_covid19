@@ -175,26 +175,29 @@ MedicoResponse = MedicoOut
 
 # ========== COORDINADOR SCHEMAS ==========
 
-class CoordinadorBase(BaseModel):
+class CoordinadorCreate(BaseModel):
     documento: str
     nombre: str
     email: EmailStr
-    hospital_id: Optional[int] = None
-
-
-class CoordinadorCreate(CoordinadorBase):
+    telefono: Optional[str] = None
     password: str
-
+    hospital_id: Optional[int] = None
 
 class CoordinadorUpdate(BaseModel):
     nombre: Optional[str] = None
     email: Optional[EmailStr] = None
+    telefono: Optional[str] = None
+    documento: Optional[str] = None
     hospital_id: Optional[int] = None
 
-
-class CoordinadorOut(CoordinadorBase):
+class CoordinadorOut(BaseModel):
     id: int
-    rol: RolEnum
+    documento: str
+    nombre: str
+    email: EmailStr
+    telefono: Optional[str] = None
+    hospital_id: Optional[int] = None
+    rol: str
     hospital: Optional[HospitalOut] = None
 
     class Config:
@@ -326,6 +329,7 @@ class CoordinadorBase(BaseModel):
     documento: str
     nombre: str
     email: EmailStr
+    telefono: Optional[str] = None
     hospital_id: Optional[int] = None
 
 
@@ -339,6 +343,7 @@ class CoordinadorCreate(CoordinadorBase):
                 "documento": "1234567",
                 "nombre": "Dr. Juan Coordinador",
                 "email": "coordinador@hospital.com",
+                "telefono": "0981234567",
                 "password": "password123",
                 "hospital_id": 1,
             }
@@ -347,8 +352,10 @@ class CoordinadorCreate(CoordinadorBase):
 
 class CoordinadorUpdate(BaseModel):
     """Schema para actualizar un coordinador"""
+    documento: Optional[str] = None
     nombre: Optional[str] = None
     email: Optional[EmailStr] = None
+    telefono: Optional[str] = None
     hospital_id: Optional[int] = None
 
     class Config:

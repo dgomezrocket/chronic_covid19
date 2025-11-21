@@ -4,7 +4,7 @@ from typing import List, Optional
 from app.db.db import get_db
 from app.models.models import Hospital
 from app.schemas.schemas import HospitalCreate, HospitalUpdate, HospitalOut
-from app.core.deps import require_admin
+from app.core.security import get_current_user
 import csv
 import io
 
@@ -77,9 +77,16 @@ def get_hospitales_cercanos(
 def create_hospital(
     hospital: HospitalCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(require_admin)  # Solo admins
+    current_user: dict = Depends(get_current_user)
 ):
     """Crea un nuevo hospital (solo admin)"""
+    # ✅ Validar que sea admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden crear hospitales"
+        )
+
     # Verificar si ya existe un hospital con ese código
     if hospital.codigo:
         existing = db.query(Hospital).filter(Hospital.codigo == hospital.codigo).first()
@@ -114,11 +121,18 @@ def update_hospital(
     hospital_id: int,
     hospital_update: HospitalUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(require_admin)  # Solo admins
+    current_user: dict = Depends(get_current_user)
 ):
     """Actualiza un hospital (solo admin)"""
+    # ✅ Validar que sea admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden actualizar hospitales"
+        )
+
     hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
-    
+
     if not hospital:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -151,11 +165,18 @@ def update_hospital(
 def delete_hospital(
     hospital_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(require_admin)  # Solo admins
+    current_user: dict = Depends(get_current_user)
 ):
     """Elimina un hospital (solo admin)"""
+    # ✅ Validar que sea admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden eliminar hospitales"
+        )
+
     hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
-    
+
     if not hospital:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -179,15 +200,22 @@ def delete_hospital(
 def importar_hospitales(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user = Depends(require_admin)  # Solo admins
+    current_user: dict = Depends(get_current_user)
 ):
     """Importa hospitales desde un archivo CSV (solo admin)"""
+    # ✅ Validar que sea admin
+    if current_user["rol"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden importar hospitales"
+        )
+
     try:
         content = file.file.read().decode("utf-8")
         reader = csv.DictReader(io.StringIO(content))
         count = 0
         errors = []
-        
+
         for idx, row in enumerate(reader, start=2):  # start=2 porque la línea 1 es el header
             try:
                 # Validar que tenga al menos nombre
