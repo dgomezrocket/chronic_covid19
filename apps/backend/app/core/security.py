@@ -7,12 +7,12 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.db.db import get_db
 from app.models.models import Paciente, Medico, Coordinador
-import os
+from app.core.config import settings  # ✅ IMPORTAR SETTINGS
 
-# Configuración
-SECRET_KEY = os.getenv("SECRET_KEY", "tu-clave-secreta-super-segura-cambiar-en-produccion")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 días
+# ✅ Usar settings centralizado - ESTO ES LA CLAVE DEL FIX
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")

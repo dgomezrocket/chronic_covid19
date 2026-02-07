@@ -94,45 +94,57 @@ export default function CoordinadorMedicosPage() {
     loadTodosMedicos();
   };
 
-  const handleAsignarMedico = async () => {
-    if (!selectedMedico) {
-      setAssignError('Por favor selecciona un médico');
-      return;
-    }
+const handleAsignarMedico = async () => {
+  if (!selectedMedico) {
+    setAssignError('Por favor selecciona un médico');
+    return;
+  }
 
-    setAssigning(true);
-    setAssignError('');
-    setAssignSuccess('');
+  // ✅ Verificar que existe el token antes de continuar
+  if (!token) {
+    setAssignError('No hay sesión activa. Por favor inicia sesión nuevamente.');
+    return;
+  }
 
-    try {
-      if (token) {
-        apiClient.setToken(token);
+  setAssigning(true);
+  setAssignError('');
+  setAssignSuccess('');
 
-        // Obtener el hospital del coordinador
-        const hospitalData = await apiClient.getCoordinadorHospital();
+  try {
+    // ✅ Configurar el token ANTES de cualquier petición
+    apiClient.setToken(token);
 
-        await apiClient.asignarMedicoAHospital({
-          medico_id: selectedMedico,
-          hospital_id: hospitalData.id,
-        });
+    // 🔍 Debug: verificar el estado del token (puedes eliminar estos logs después)
+    console.log('🔑 Token disponible:', !!token);
+    console.log('🏥 Obteniendo hospital del coordinador...');
 
-        setAssignSuccess('✅ Médico asignado correctamente al hospital');
+    // Obtener el hospital del coordinador
+    const hospitalData = await apiClient.getCoordinadorHospital();
+    console.log('🏥 Hospital obtenido:', hospitalData);
 
-        // Recargar la lista de médicos
-        setTimeout(async () => {
-          await loadData();
-          setShowAsignarModal(false);
-          setSelectedMedico(null);
-          setAssignSuccess('');
-        }, 1500);
-      }
-    } catch (err: any) {
-      console.error('❌ Error al asignar médico:', err);
-      setAssignError(err?.message || 'Error al asignar médico');
-    } finally {
-      setAssigning(false);
-    }
-  };
+    console.log('👨‍⚕️ Asignando médico:', selectedMedico, 'a hospital:', hospitalData.id);
+
+    await apiClient.asignarMedicoAHospital({
+      medico_id: selectedMedico,
+      hospital_id: hospitalData.id,
+    });
+
+    setAssignSuccess('✅ Médico asignado correctamente al hospital');
+
+    // Recargar la lista de médicos
+    setTimeout(async () => {
+      await loadData();
+      setShowAsignarModal(false);
+      setSelectedMedico(null);
+      setAssignSuccess('');
+    }, 1500);
+  } catch (err: any) {
+    console.error('❌ Error al asignar médico:', err);
+    setAssignError(err?.message || 'Error al asignar médico');
+  } finally {
+    setAssigning(false);
+  }
+};
 
   const handleRemoverMedico = async (medicoId: number) => {
     if (!confirm('¿Estás seguro de que deseas remover este médico del hospital?')) {

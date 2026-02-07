@@ -17,6 +17,7 @@ from app.schemas.schemas import (
     HospitalDetalladoOut,
     MedicoResponse,
     PacienteOut,
+    PacienteConMedicoOut,
 )
 from app.core.security import get_current_user
 from app.services.coordinador_service import (
@@ -382,7 +383,7 @@ def get_mis_medicos(
     return medicos
 
 
-@router.get("/me/pacientes", response_model=List[PacienteOut])
+@router.get("/me/pacientes", response_model=List[PacienteConMedicoOut])
 def get_mis_pacientes(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)

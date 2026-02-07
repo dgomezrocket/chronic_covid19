@@ -19,10 +19,9 @@ from app.schemas.schemas import (
     HospitalConDistanciaOut,
     MedicoResponse,
     AsignacionSuccessResponse,
-    OperacionExitosaResponse,
-    TokenData
+    OperacionExitosaResponse
 )
-from app.core.deps import require_coordinador, get_current_user
+from app.core.deps import require_coordinador, get_current_user,require_medico
 from app.services.coordinador_service import (
     asignar_medico_a_hospital,
     remover_medico_de_hospital,
@@ -46,7 +45,7 @@ router = APIRouter()
 def asignar_medico_hospital(
         asignacion_data: AsignacionMedicoHospitalCreate,
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Asigna un médico a un hospital (solo coordinador del hospital).
@@ -67,7 +66,7 @@ def asignar_medico_hospital(
 def remover_medico_hospital(
         remover_data: RemoverMedicoHospitalRequest,
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Remueve un médico de un hospital (solo coordinador del hospital).
@@ -92,7 +91,7 @@ def asignar_paciente_hospital(
         paciente_id: int = Query(..., description="ID del paciente"),
         hospital_id: int = Query(..., description="ID del hospital"),
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Asigna un paciente a un hospital (solo coordinador del hospital).
@@ -111,7 +110,7 @@ def asignar_paciente_hospital(
 def asignar_medico_paciente(
         asignacion_data: AsignacionCreate,
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Asigna un médico a un paciente (solo coordinador del hospital).
@@ -138,7 +137,7 @@ def asignar_medico_paciente(
 def get_asignacion_paciente(
         paciente_id: int,
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Obtiene la asignación activa de un paciente.
@@ -158,7 +157,7 @@ def get_asignacion_paciente(
 def desasignar_medico_paciente(
         asignacion_id: int,
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Desactiva una asignación médico-paciente (solo coordinador del hospital).
@@ -176,14 +175,22 @@ def desasignar_medico_paciente(
 @router.get("/buscar-paciente", response_model=List[BuscarPacienteOut])
 def buscar_paciente_endpoint(
         q: str = Query(..., min_length=1, description="Término de búsqueda (documento o nombre)"),
+        solo_sin_hospital: bool = Query(False, description="Filtrar solo pacientes sin hospital asignado"),
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Busca pacientes por documento o nombre.
     Retorna información del paciente con su hospital y médico asignado.
+
+    - Si solo_sin_hospital=True, devuelve únicamente pacientes sin hospital asignado.
+    - Si solo_sin_hospital=False (default), devuelve todos los pacientes que coincidan.
     """
     pacientes = buscar_paciente(db, q)
+
+    # Filtrar si se solicita solo pacientes sin hospital
+    if solo_sin_hospital:
+        pacientes = [p for p in pacientes if p.hospital_id is None]
 
     resultado = []
     for paciente in pacientes:
@@ -204,13 +211,66 @@ def buscar_paciente_endpoint(
     return resultado
 
 
+@router.get("/mis-pacientes", response_model=List[BuscarPacienteOut])
+def listar_pacientes_medico(
+        db: Session = Depends(get_db),
+        current_user: dict = Depends(require_medico)
+):
+    """
+    Lista todos los pacientes asignados al médico actual.
+    Solo accesible por médicos.
+    """
+    from app.models.models import Asignacion
+
+    # Primero obtener el médico actual
+    medico = db.query(Medico).filter(
+        Medico.email == current_user["email"]
+    ).first()
+
+    if not medico:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Médico no encontrado"
+        )
+
+    # Obtener IDs únicos de pacientes asignados a este médico (solo activos)
+    pacientes_ids = db.query(Asignacion.paciente_id).filter(
+        Asignacion.medico_id == medico.id,
+        Asignacion.activo == True
+    ).distinct().all()
+
+    pacientes_ids = [p[0] for p in pacientes_ids]
+
+    if not pacientes_ids:
+        return []
+
+    pacientes = db.query(Paciente).filter(
+        Paciente.id.in_(pacientes_ids)
+    ).all()
+
+    resultado = []
+    for paciente in pacientes:
+        asignacion = obtener_asignacion_paciente(db, paciente.id)
+        resultado.append({
+            "id": paciente.id,
+            "documento": paciente.documento,
+            "nombre": paciente.nombre,
+            "email": paciente.email,
+            "telefono": paciente.telefono,
+            "hospital": paciente.hospital,
+            "medico_asignado": asignacion.medico if asignacion else None,
+            "asignacion_activa": asignacion
+        })
+
+    return resultado
+
 @router.get("/pacientes-sin-hospital", response_model=List[PacienteSinHospitalOut])
 def get_pacientes_sin_hospital(
         lat: Optional[float] = Query(None, description="Latitud del punto de referencia"),
         lon: Optional[float] = Query(None, description="Longitud del punto de referencia"),
         radio_km: float = Query(50.0, ge=1, le=200, description="Radio de búsqueda en km"),
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Obtiene pacientes sin hospital asignado.
@@ -262,7 +322,7 @@ def get_medicos_disponibles(
         hospital_id: int = Query(..., description="ID del hospital"),
         especialidad_id: Optional[int] = Query(None, description="Filtrar por especialidad"),
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Obtiene los médicos disponibles de un hospital.
@@ -284,7 +344,7 @@ def get_asignaciones(
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=500),
         db: Session = Depends(get_db),
-        current_user: TokenData = Depends(require_coordinador)
+        current_user: dict = Depends(require_coordinador)
 ):
     """
     Obtiene un listado de asignaciones con filtros opcionales.

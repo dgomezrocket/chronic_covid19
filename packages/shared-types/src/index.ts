@@ -19,18 +19,6 @@ export interface Especialidad {
   activa: number;
 }
 
-// ========== HOSPITAL ==========
-export interface Hospital {
-  id: number;
-  nombre: string;
-  codigo?: string;
-  departamento?: string;  // CAMBIO: provincia -> departamento
-  ciudad?: string;        // CAMBIO: distrito -> ciudad
-  barrio?: string;        // NUEVO: barrio/compañía/localidad
-  latitud?: number;
-  longitud?: number;
-}
-
 // ========== USER TYPES ==========
 export interface Usuario {
   id: number;
@@ -127,23 +115,6 @@ export interface Mensaje {
   leido: number;
 }
 
-// ========== FORMULARIO ==========
-export interface Formulario {
-  id: number;
-  tipo: string;
-  preguntas: Record<string, any>;
-  creador_id?: number;
-  fecha_creacion: string;
-}
-
-export interface RespuestaFormulario {
-  id: number;
-  paciente_id: number;
-  formulario_id: number;
-  respuestas: Record<string, any>;
-  timestamp: string;
-}
-
 // ========== ASIGNACION ==========
 export interface Asignacion {
   id: number;
@@ -158,13 +129,6 @@ export interface Asignacion {
 }
 
 // ========== TIPOS PARA ESPECIALIDADES ==========
-
-export interface Especialidad {
-  id: number;
-  nombre: string;
-  descripcion?: string;
-  activa: number;
-}
 
 export interface EspecialidadCreate {
   nombre: string;
@@ -356,4 +320,104 @@ export interface OperacionExitosa {
 export interface AsignacionSuccess {
   message: string;
   asignacion: Asignacion;
+}
+
+// ========== FORMULARIOS (Extendidos) ==========
+
+export interface PreguntaFormulario {
+  id: string;
+  type: 'text' | 'number' | 'select' | 'date';
+  label: string;
+  required?: boolean;
+  options?: string[];
+  placeholder?: string;
+  minValue?: number;
+  maxValue?: number;
+}
+
+export interface Formulario {
+  id: number;
+  tipo: string;
+  titulo?: string;
+  descripcion?: string;
+  preguntas: PreguntaFormulario[];
+  creador_id?: number;
+  fecha_creacion: string;
+  fecha_actualizacion?: string;
+  activo: boolean;
+  meta?: Record<string, any>;
+}
+
+export interface FormularioCreate {
+  tipo?: string;
+  titulo: string;
+  descripcion?: string;
+  preguntas: PreguntaFormulario[];
+  meta?: Record<string, any>;
+}
+
+export interface FormularioUpdate {
+  tipo?: string;
+  titulo?: string;
+  descripcion?: string;
+  preguntas?: PreguntaFormulario[];
+  activo?: boolean;
+  meta?: Record<string, any>;
+}
+
+export interface FormularioListItem {
+  id: number;
+  tipo: string;
+  titulo?: string;
+  descripcion?: string;
+  creador_id?: number;
+  fecha_creacion: string;
+  activo: boolean;
+}
+
+// ========== ASIGNACIONES DE FORMULARIOS ==========
+
+export type EstadoAsignacion = 'pendiente' | 'completado' | 'expirado' | 'cancelado';
+
+export interface FormularioAsignacion {
+  id: number;
+  formulario_id: number;
+  paciente_id: number;
+  asignado_por: number;
+  fecha_asignacion: string;
+  fecha_expiracion?: string;
+  fecha_completado?: string;
+  numero_instancia: number;
+  estado: EstadoAsignacion;
+  datos_extra?: Record<string, any>;
+}
+
+export interface FormularioAsignacionCreate {
+  formulario_id: number;
+  paciente_id: number;
+  fecha_expiracion?: string;
+  datos_extra?: Record<string, any>;
+}
+
+export interface FormularioAsignacionDetalle extends FormularioAsignacion {
+  formulario_titulo?: string;
+  formulario_tipo: string;
+  formulario_descripcion?: string;
+}
+
+// ========== RESPUESTAS DE FORMULARIOS ==========
+
+export interface RespuestaFormulario {
+  id: number;
+  paciente_id: number;
+  formulario_id: number;
+  asignacion_id?: number;
+  respuestas: Record<string, any>;
+  timestamp: string;
+}
+
+export interface RespuestaFormularioCreate {
+  formulario_id: number;
+  asignacion_id?: number;
+  respuestas: Record<string, any>;
 }

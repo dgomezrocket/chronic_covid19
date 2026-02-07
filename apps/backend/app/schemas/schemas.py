@@ -2,10 +2,11 @@
 # IMPORTS
 # ================================================================
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List, Dict
 from datetime import date, datetime
 from enum import Enum
+from app.models.models import RolEnum
 
 
 # ================================================================
@@ -126,7 +127,7 @@ class PacienteOut(PacienteBase):
     id: int
     rol: RolEnum
     hospital_id: Optional[int] = None
-    hospital: Optional[HospitalOut] = None
+    hospital: Optional["HospitalOut"] = None
 
     class Config:
         from_attributes = True
@@ -135,6 +136,13 @@ class PacienteOut(PacienteBase):
 # Alias para compatibilidad
 PacienteResponse = PacienteOut
 
+
+class PacienteConMedicoOut(PacienteOut):
+    """Paciente con información del médico actualmente asignado"""
+    medico_asignado: Optional["MedicoResponse"] = None
+
+    class Config:
+        from_attributes = True
 
 # ========== MEDICO SCHEMAS ==========
 
@@ -218,7 +226,11 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
+    """Datos contenidos en el token JWT"""
+    id: Optional[int] = None
     email: Optional[str] = None
+    rol: Optional[RolEnum] = None
+    nombre: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -498,6 +510,13 @@ class AsignacionOut(AsignacionBase):
     # Datos del médico (para mostrar en listas)
     medico: Optional[MedicoResponse] = None
 
+    @field_validator('fecha_asignacion', mode='before')
+    @classmethod
+    def convert_datetime_to_str(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+
     class Config:
         from_attributes = True
 
@@ -593,19 +612,68 @@ MensajeResponse = MensajeOut
 # FORMULARIOS SCHEMAS
 # ================================================================
 
+class PreguntaFormulario(BaseModel):
+    """Estructura de una pregunta en el formulario"""
+    id: str
+    type: str  # text, number, select, date
+    label: str
+    required: bool = False
+    options: Optional[List[str]] = None  # Solo para type='select'
+    placeholder: Optional[str] = None
+    min_value: Optional[float] = None  # Solo para type='number'
+    max_value: Optional[float] = None  # Solo para type='number'
+
+
 class FormularioBase(BaseModel):
     tipo: str
-    preguntas: dict
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    preguntas: List[dict]
+    meta: Optional[dict] = None
 
 
 class FormularioCreate(BaseModel):
-    creador_id: Optional[int] = None
+    tipo: str = "personalizado"
+    titulo: str
+    descripcion: Optional[str] = None
+    preguntas: List[dict]
+    meta: Optional[dict] = None
+
+
+class FormularioUpdate(BaseModel):
+    tipo: Optional[str] = None
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    preguntas: Optional[List[dict]] = None
+    activo: Optional[bool] = None
+    meta: Optional[dict] = None
 
 
 class FormularioOut(BaseModel):
     id: int
-    fecha_creacion: str
+    tipo: str
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    preguntas: List[dict]
     creador_id: Optional[int] = None
+    fecha_creacion: datetime
+    fecha_actualizacion: Optional[datetime] = None
+    activo: bool = True
+    meta: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FormularioListOut(BaseModel):
+    """Versión resumida para listados"""
+    id: int
+    tipo: str
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    creador_id: Optional[int] = None
+    fecha_creacion: datetime
+    activo: bool = True
 
     class Config:
         from_attributes = True
@@ -615,19 +683,74 @@ class FormularioOut(BaseModel):
 FormularioResponse = FormularioOut
 
 
-class RespuestaFormularioBase(BaseModel):
+# ================================================================
+# ASIGNACIONES DE FORMULARIOS SCHEMAS
+# ================================================================
+
+class FormularioAsignacionCreate(BaseModel):
+    """Crear una asignación de formulario a paciente"""
     paciente_id: int
+    fecha_expiracion: Optional[datetime] = None
+    datos_extra: Optional[dict] = None
+
+
+class FormularioAsignacionUpdate(BaseModel):
+    """Actualizar una asignación"""
+    fecha_expiracion: Optional[datetime] = None
+    estado: Optional[str] = None  # pendiente, completado, expirado, cancelado
+    datos_extra: Optional[dict] = None
+
+
+class FormularioAsignacionOut(BaseModel):
+    """Respuesta de una asignación"""
+    id: int
     formulario_id: int
+    paciente_id: int
+    asignado_por: int
+    fecha_asignacion: datetime
+    fecha_expiracion: Optional[datetime] = None
+    fecha_completado: Optional[datetime] = None
+    numero_instancia: int
+    estado: str
+    datos_extra: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FormularioAsignacionDetalleOut(FormularioAsignacionOut):
+    """Asignación con datos del formulario incluidos"""
+    formulario_titulo: Optional[str] = None
+    formulario_tipo: str = ""
+    formulario_descripcion: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
+# RESPUESTAS DE FORMULARIOS SCHEMAS
+# ================================================================
+
+class RespuestaFormularioBase(BaseModel):
     respuestas: dict
 
 
 class RespuestaFormularioCreate(BaseModel):
-    pass
+    """Crear respuesta a un formulario"""
+    formulario_id: int
+    asignacion_id: Optional[int] = None
+    respuestas: dict
 
 
 class RespuestaFormularioOut(BaseModel):
+    """Respuesta completa de un formulario"""
     id: int
-    timestamp: str
+    paciente_id: int
+    formulario_id: int
+    asignacion_id: Optional[int] = None
+    respuestas: dict
+    timestamp: datetime
 
     class Config:
         from_attributes = True

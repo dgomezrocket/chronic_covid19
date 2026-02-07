@@ -10,7 +10,9 @@ from app.models.models import (
     Hospital,
     Asignacion,
     Formulario,
+    FormularioAsignacion,
     RespuestaFormulario,
+    FormularioAsignacion,
     Mensaje
 )
 

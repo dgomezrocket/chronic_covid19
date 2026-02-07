@@ -416,9 +416,9 @@ def obtener_pacientes_del_hospital(
     db: Session,
     hospital_id: int,
     coordinador_user: dict
-) -> List[Paciente]:
+) -> List[dict]:
     """
-    Obtiene los pacientes asignados a un hospital.
+    Obtiene los pacientes asignados a un hospital con su médico asignado.
     """
     # Obtener el coordinador
     coordinador = obtener_coordinador_actual(db, coordinador_user)
@@ -431,7 +431,35 @@ def obtener_pacientes_del_hospital(
         Paciente.hospital_id == hospital_id
     ).all()
 
-    return pacientes
+    # Agregar información del médico asignado a cada paciente
+    resultado = []
+    for paciente in pacientes:
+        # Buscar asignación activa
+        asignacion_activa = db.query(Asignacion).filter(
+            Asignacion.paciente_id == paciente.id,
+            Asignacion.activo == True
+        ).first()
+
+        # Construir diccionario con datos del paciente
+        paciente_dict = {
+            "id": paciente.id,
+            "documento": paciente.documento,
+            "nombre": paciente.nombre,
+            "fecha_nacimiento": paciente.fecha_nacimiento,
+            "genero": paciente.genero,
+            "direccion": paciente.direccion,
+            "email": paciente.email,
+            "telefono": paciente.telefono,
+            "latitud": paciente.latitud,
+            "longitud": paciente.longitud,
+            "rol": paciente.rol,
+            "hospital_id": paciente.hospital_id,
+            "hospital": paciente.hospital,
+            "medico_asignado": asignacion_activa.medico if asignacion_activa else None
+        }
+        resultado.append(paciente_dict)
+
+    return resultado
 
 
 def obtener_pacientes_sin_hospital(
@@ -572,6 +600,7 @@ def asignar_medico_a_paciente(
     nueva_asignacion = Asignacion(
         paciente_id=paciente_id,
         medico_id=medico_id,
+        fecha_asignacion=datetime.utcnow(),
         activo=True,
         notas=notas
     )

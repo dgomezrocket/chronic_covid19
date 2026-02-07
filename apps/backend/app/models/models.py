@@ -161,13 +161,39 @@ class Formulario(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tipo = Column(String, nullable=False)
+    titulo = Column(String(255), nullable=True)
+    descripcion = Column(Text, nullable=True)
     preguntas = Column(JSON, nullable=False)
     creador_id = Column(Integer, ForeignKey("medicos.id"), nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_actualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    activo = Column(Boolean, default=True, nullable=False)
+    meta = Column(JSON, nullable=True, default=dict)
 
     # Relaciones
     creador = relationship("Medico", back_populates="formularios_creados")
     respuestas = relationship("RespuestaFormulario", back_populates="formulario")
+    asignaciones = relationship("FormularioAsignacion", back_populates="formulario", cascade="all, delete-orphan")  # 🆕 NUEVO
+
+class FormularioAsignacion(Base):
+    __tablename__ = "formulario_asignaciones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    formulario_id = Column(Integer, ForeignKey("formularios.id"), nullable=False, index=True)
+    paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False, index=True)
+    asignado_por = Column(Integer, ForeignKey("medicos.id"), nullable=False)
+    fecha_asignacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_expiracion = Column(DateTime, nullable=True)
+    fecha_completado = Column(DateTime, nullable=True)
+    numero_instancia = Column(Integer, default=1, nullable=False)  # Permite múltiples instancias
+    estado = Column(String(50), default="pendiente", nullable=False)  # pendiente, completado, expirado, cancelado
+    datos_extra = Column(JSON, nullable=True, default=dict)  # ✅ RENOMBRADO de 'metadata' a 'datos_extra'
+
+    # Relaciones
+    formulario = relationship("Formulario", back_populates="asignaciones")
+    paciente = relationship("Paciente", backref="formulario_asignaciones")
+    medico_asignador = relationship("Medico", foreign_keys=[asignado_por], backref="formularios_asignados")
+    respuestas = relationship("RespuestaFormulario", back_populates="asignacion")
 
 
 class RespuestaFormulario(Base):
@@ -176,13 +202,14 @@ class RespuestaFormulario(Base):
     id = Column(Integer, primary_key=True, index=True)
     paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False)
     formulario_id = Column(Integer, ForeignKey("formularios.id"), nullable=False)
+    asignacion_id = Column(Integer, ForeignKey("formulario_asignaciones.id"), nullable=True)
     respuestas = Column(JSON, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relaciones
     paciente = relationship("Paciente", back_populates="formularios")
     formulario = relationship("Formulario", back_populates="respuestas")
-
+    asignacion = relationship("FormularioAsignacion", back_populates="respuestas")
 
 class Mensaje(Base):
     __tablename__ = "mensajes"

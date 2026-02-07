@@ -29,7 +29,15 @@ import {
   BuscarPacienteResult,
   HospitalConDistancia,
   OperacionExitosa,
-  AsignacionSuccess
+  AsignacionSuccess,
+    Formulario,
+  FormularioCreate,
+  FormularioUpdate,
+  FormularioListItem,
+  FormularioAsignacion,
+  FormularioAsignacionCreate,
+  FormularioAsignacionDetalle,
+  RespuestaFormularioCreate,
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -591,6 +599,10 @@ clearToken() {
    */
   async asignarMedicoAHospital(data: AsignacionMedicoHospital): Promise<Medico> {
     try {
+      // ✅ Asegurarnos de que el token esté en el header
+      if (this.token) {
+        this.client.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
+      }
       const response = await this.client.post<Medico>('/asignaciones/medico-hospital', data);
       return response.data;
     } catch (error) {
@@ -676,16 +688,37 @@ clearToken() {
   /**
    * Busca pacientes por documento o nombre
    */
-  async buscarPaciente(query: string): Promise<BuscarPacienteResult[]> {
-    try {
-      const response = await this.client.get<BuscarPacienteResult[]>(
-        `/asignaciones/buscar-paciente?q=${encodeURIComponent(query)}`
-      );
-      return response.data;
-    } catch (error) {
-      throw this.handleError(error);
+
+async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<BuscarPacienteResult[]> {
+  try {
+    const params = new URLSearchParams();
+    params.append('q', query);
+    if (soloSinHospital) {
+      params.append('solo_sin_hospital', 'true');
     }
+    const response = await this.client.get<BuscarPacienteResult[]>(
+      `/asignaciones/buscar-paciente?${params.toString()}`
+    );
+    return response.data;
+  } catch (error) {
+    throw this.handleError(error);
   }
+}
+
+    /**
+     * Lista los pacientes asignados al médico actual
+     */
+    async listarMisPacientes(): Promise<BuscarPacienteResult[]> {
+      try {
+        const response = await this.client.get<BuscarPacienteResult[]>(
+          `/asignaciones/mis-pacientes`
+        );
+        return response.data;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
 
   /**
    * Obtiene pacientes sin hospital asignado con hospitales cercanos
@@ -830,6 +863,153 @@ clearToken() {
     }
   }
 
+    // ========== FORMULARIOS ENDPOINTS ==========
+
+  /**
+   * Obtiene todos los formularios (médico ve los suyos, admin ve todos)
+   */
+  async getFormularios(soloActivos: boolean = true): Promise<FormularioListItem[]> {
+    try {
+      const response = await this.client.get<FormularioListItem[]>(
+        `/formularios/?solo_activos=${soloActivos}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene un formulario por ID
+   */
+  async getFormularioById(id: number): Promise<Formulario> {
+    try {
+      const response = await this.client.get<Formulario>(`/formularios/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Crea un nuevo formulario (solo médico)
+   */
+  async createFormulario(data: FormularioCreate): Promise<Formulario> {
+    try {
+      const response = await this.client.post<Formulario>('/formularios/', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Actualiza un formulario (solo el creador o admin)
+   */
+  async updateFormulario(id: number, data: FormularioUpdate): Promise<Formulario> {
+    try {
+      const response = await this.client.put<Formulario>(`/formularios/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Elimina (desactiva) un formulario
+   */
+  async deleteFormulario(id: number): Promise<{ message: string; id: number }> {
+    try {
+      const response = await this.client.delete<{ message: string; id: number }>(
+        `/formularios/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== ASIGNACIONES DE FORMULARIOS ==========
+
+  /**
+   * Asigna un formulario a un paciente (solo médico)
+   */
+  async asignarFormulario(data: FormularioAsignacionCreate): Promise<FormularioAsignacion> {
+    try {
+      const response = await this.client.post<FormularioAsignacion>(
+        `/formularios/${data.formulario_id}/asignaciones`,
+        {
+          paciente_id: data.paciente_id,
+          fecha_expiracion: data.fecha_expiracion,
+          datos_extra: data.datos_extra,
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene las asignaciones de un formulario
+   */
+  async getAsignacionesFormulario(formularioId: number): Promise<FormularioAsignacion[]> {
+    try {
+      const response = await this.client.get<FormularioAsignacion[]>(
+        `/formularios/${formularioId}/asignaciones`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene las asignaciones de formularios para un paciente
+   */
+  async getAsignacionesPaciente(pacienteId: number): Promise<FormularioAsignacionDetalle[]> {
+    try {
+      const response = await this.client.get<FormularioAsignacionDetalle[]>(
+        `/formularios/asignaciones/paciente/${pacienteId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene mis formularios asignados (para pacientes)
+   */
+  async getMisFormulariosAsignados(): Promise<FormularioAsignacionDetalle[]> {
+    try {
+      const response = await this.client.get<FormularioAsignacionDetalle[]>(
+        '/formularios/mis-asignaciones'
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Envía respuesta a un formulario asignado
+   */
+  async responderFormulario(
+    asignacionId: number,
+    respuestas: Record<string, any>
+  ): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        `/formularios/asignaciones/${asignacionId}/responder`,
+        { respuestas }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
 
   // ========== ERROR HANDLING ==========
 
@@ -857,6 +1037,8 @@ clearToken() {
   }
 }
 
+
+
 // Export singleton instance
 export const apiClient = new ApiClient();
 
@@ -865,3 +1047,4 @@ export default ApiClient;
 
 // Re-export validation schemas
 export * from './validation';
+
