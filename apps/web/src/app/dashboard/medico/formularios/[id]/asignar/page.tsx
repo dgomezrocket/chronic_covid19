@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { apiClient } from '@chronic-covid19/api-client';
-import { Formulario, Paciente, FormularioAsignacion } from '@chronic-covid19/shared-types';
+import { Formulario, Paciente, FormularioAsignacion, RespuestaFormulario } from '@chronic-covid19/shared-types';
 import { useAuthStore } from '@/store/authStore';
 
 export default function AsignarFormularioPage() {
   const router = useRouter();
   const params = useParams();
   const formularioId = Number(params.id);
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
 
   const [formulario, setFormulario] = useState<Formulario | null>(null);
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
@@ -31,9 +31,13 @@ export default function AsignarFormularioPage() {
   const [searchResults, setSearchResults] = useState<Paciente[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [allPacientes, setAllPacientes] = useState<Paciente[]>([]); // ← Nuevo estado
+  const [allPacientes, setAllPacientes] = useState<Paciente[]>([]);
 
-
+  // Estado para ver respuesta
+  const [showRespuestaModal, setShowRespuestaModal] = useState(false);
+  const [selectedAsignacionId, setSelectedAsignacionId] = useState<number | null>(null);
+  const [respuestaActual, setRespuestaActual] = useState<RespuestaFormulario | null>(null);
+  const [loadingRespuesta, setLoadingRespuesta] = useState(false);
 
   // Verificar que sea médico
   useEffect(() => {
@@ -191,6 +195,22 @@ export default function AsignarFormularioPage() {
     }
   };
 
+const verRespuesta = async (asignacionId: number) => {
+    try {
+      setLoadingRespuesta(true);
+      setSelectedAsignacionId(asignacionId);
+      setShowRespuestaModal(true);
+
+      const respuesta = await apiClient.getRespuestaAsignacion(asignacionId);
+      setRespuestaActual(respuesta);
+    } catch (err) {
+      console.error('Error al cargar respuesta:', err);
+      setRespuestaActual(null);
+    } finally {
+      setLoadingRespuesta(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -333,7 +353,7 @@ export default function AsignarFormularioPage() {
           <div className="p-6 border-b border-gray-200">
             <h3 className="text-xl font-bold text-gray-900">Historial de Asignaciones</h3>
             <p className="text-sm text-gray-500 mt-1">
-              El mismo formulario puede asignarse múltiples veces al mismo paciente
+              Haz clic en "Ver Respuesta" para ver las respuestas de los formularios completados
             </p>
           </div>
 
@@ -371,6 +391,9 @@ export default function AsignarFormularioPage() {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Estado
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -406,6 +429,16 @@ export default function AsignarFormularioPage() {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getEstadoBadge(asignacion.estado)}`}>
                           {getEstadoLabel(asignacion.estado)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {asignacion.estado === 'completado' && (
+                          <button
+                            onClick={() => verRespuesta(asignacion.id)}
+                            className="px-3 py-1 bg-green-50 text-green-700 rounded-lg text-sm font-semibold hover:bg-green-100 transition-colors"
+                          >
+                            Ver Respuesta
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -609,6 +642,116 @@ export default function AsignarFormularioPage() {
                   ? 'Asignando...'
                   : `Asignar a ${selectedPacientes.length} paciente(s)`
                 }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Respuesta */}
+      {showRespuestaModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b bg-gradient-to-r from-green-500 to-emerald-600">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Respuestas del Paciente</h2>
+                  <p className="text-green-100 mt-1">{formulario?.titulo}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowRespuestaModal(false);
+                    setRespuestaActual(null);
+                    setSelectedAsignacionId(null);
+                  }}
+                  className="text-white hover:text-gray-200 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingRespuesta ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                  <span className="ml-3 text-gray-600">Cargando respuesta...</span>
+                </div>
+              ) : respuestaActual ? (
+                <div className="space-y-4">
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      <strong>Respondido:</strong> {formatDate(respuestaActual.timestamp)}
+                    </p>
+                  </div>
+
+                  {(() => {
+                        // Extraer las respuestas reales (pueden estar anidadas)
+                        const respuestasData = respuestaActual.respuestas?.respuestas 
+                          || respuestaActual.respuestas 
+                          || {};
+                        
+                        return Object.entries(respuestasData).map(([preguntaId, respuesta]) => {
+                          // Buscar la pregunta en el formulario para obtener el label
+                          const pregunta = formulario?.preguntas?.find(p => p.id === preguntaId);
+                          const etiqueta = pregunta?.label || preguntaId;
+                          
+                          // Formatear la respuesta según el tipo
+                          let respuestaFormateada: string;
+                          if (typeof respuesta === 'boolean') {
+                            respuestaFormateada = respuesta ? 'Sí' : 'No';
+                          } else if (respuesta === 'true' || respuesta === 'Sí') {
+                            respuestaFormateada = 'Sí';
+                          } else if (respuesta === 'false' || respuesta === 'No') {
+                            respuestaFormateada = 'No';
+                          } else if (typeof respuesta === 'object' && respuesta !== null) {
+                            respuestaFormateada = JSON.stringify(respuesta, null, 2);
+                          } else {
+                            respuestaFormateada = String(respuesta || '—');
+                          }
+
+                          return (
+                            <div key={preguntaId} className="border border-gray-200 rounded-xl overflow-hidden">
+                              <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                                <p className="text-sm font-semibold text-gray-700">
+                                  📋 {etiqueta}
+                                </p>
+                              </div>
+                              <div className="px-4 py-3">
+                                <p className="text-gray-900 whitespace-pre-wrap">
+                                  {respuestaFormateada}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-gray-600">No se encontró la respuesta</p>
+                    </div>
+                  )}
+                </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowRespuestaModal(false);
+                  setRespuestaActual(null);
+                  setSelectedAsignacionId(null);
+                }}
+                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Cerrar
               </button>
             </div>
           </div>

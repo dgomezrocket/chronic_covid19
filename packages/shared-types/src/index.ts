@@ -421,3 +421,30 @@ export interface RespuestaFormularioCreate {
   asignacion_id?: number;
   respuestas: Record<string, any>;
 }
+
+// ========== NUEVOS TIPOS PARA VER RESPUESTAS ==========
+
+export interface FormularioPacienteDetalle {
+  asignacion_id: number;
+  formulario_id: number;
+  formulario_titulo?: string;
+  formulario_tipo: string;
+  fecha_asignacion: string;
+  fecha_expiracion?: string;
+  fecha_completado?: string;
+  estado: EstadoAsignacion;
+  numero_instancia: number;
+  tiene_respuesta: boolean;
+  respuesta?: {
+    id: number;
+    respuestas: Record<string, any>;
+    timestamp: string;
+  };
+}
+
+export interface AsignacionConRespuesta extends FormularioAsignacion {
+  paciente_nombre?: string;
+  paciente_documento?: string;
+  tiene_respuesta: boolean;
+  respuesta?: RespuestaFormulario;
+}

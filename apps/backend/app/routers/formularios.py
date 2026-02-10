@@ -28,6 +28,84 @@ def require_medico(current_user: dict = Depends(get_current_user)):
     return current_user
 
 
+# ========== RUTAS ESTÁTICAS PRIMERO ==========
+
+@router.get("/mis-asignaciones", response_model=List[FormularioAsignacionDetalleOut])
+def mis_asignaciones(
+    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, completado, todos"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtiene los formularios asignados al paciente actual"""
+    if current_user["rol"] != "paciente":
+        raise HTTPException(status_code=403, detail="Solo pacientes pueden ver sus asignaciones")
+
+    query = db.query(FormularioAsignacion).join(Formulario).filter(
+        FormularioAsignacion.paciente_id == current_user["id"]
+    )
+    
+    # Filtrar por estado si se especifica
+    if estado and estado != "todos":
+        query = query.filter(FormularioAsignacion.estado == estado)
+
+    asignaciones = query.order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
+
+    result = []
+    for a in asignaciones:
+        result.append({
+            **a.__dict__,
+            "formulario_titulo": a.formulario.titulo,
+            "formulario_tipo": a.formulario.tipo,
+            "formulario_descripcion": a.formulario.descripcion
+        })
+
+    return result
+
+
+# Nuevo endpoint para que el paciente vea su respuesta
+@router.get("/mis-asignaciones/{asignacion_id}/mi-respuesta")
+def obtener_mi_respuesta(
+    asignacion_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtiene la respuesta del paciente a una asignación completada (solo lectura)"""
+    if current_user["rol"] != "paciente":
+        raise HTTPException(status_code=403, detail="Solo pacientes pueden ver sus respuestas")
+    
+    asignacion = db.query(FormularioAsignacion).filter(
+        FormularioAsignacion.id == asignacion_id,
+        FormularioAsignacion.paciente_id == current_user["id"]
+    ).first()
+    
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    
+    if asignacion.estado != "completado":
+        raise HTTPException(status_code=400, detail="Este formulario no ha sido completado")
+    
+    respuesta = db.query(RespuestaFormulario).filter(
+        RespuestaFormulario.asignacion_id == asignacion_id
+    ).first()
+    
+    if not respuesta:
+        raise HTTPException(status_code=404, detail="No se encontró la respuesta")
+    
+    # Obtener el formulario para incluir las preguntas
+    formulario = asignacion.formulario
+    
+    return {
+        "asignacion_id": asignacion_id,
+        "formulario_id": asignacion.formulario_id,
+        "formulario_titulo": formulario.titulo,
+        "formulario_descripcion": formulario.descripcion,
+        "preguntas": formulario.preguntas,
+        "respuestas": respuesta.respuestas,
+        "fecha_completado": asignacion.fecha_completado.isoformat() if asignacion.fecha_completado else None,
+        "timestamp_respuesta": respuesta.timestamp.isoformat() if respuesta.timestamp else None
+    }
+
+
 # ========== CRUD FORMULARIOS ==========
 
 @router.get("/", response_model=List[FormularioListOut])
@@ -193,32 +271,6 @@ def listar_asignaciones_formulario(
     ).order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
 
 
-@router.get("/mis-asignaciones", response_model=List[FormularioAsignacionDetalleOut])
-def mis_asignaciones(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """Obtiene los formularios asignados al paciente actual"""
-    if current_user["rol"] != "paciente":
-        raise HTTPException(status_code=403, detail="Solo pacientes pueden ver sus asignaciones")
-    
-    asignaciones = db.query(FormularioAsignacion).join(Formulario).filter(
-        FormularioAsignacion.paciente_id == current_user["id"],
-        FormularioAsignacion.estado == "pendiente"
-    ).all()
-    
-    result = []
-    for a in asignaciones:
-        result.append({
-            **a.__dict__,
-            "formulario_titulo": a.formulario.titulo,
-            "formulario_tipo": a.formulario.tipo,
-            "formulario_descripcion": a.formulario.descripcion
-        })
-    
-    return result
-
-
 @router.post("/asignaciones/{asignacion_id}/responder")
 def responder_formulario(
     asignacion_id: int,
@@ -255,3 +307,120 @@ def responder_formulario(
     
     return {"message": "Respuesta guardada exitosamente"}
 
+
+# ========== NUEVOS ENDPOINTS PARA VER RESPUESTAS ==========
+
+@router.get("/{formulario_id}/respuestas", response_model=List[RespuestaFormularioOut])
+def listar_respuestas_formulario(
+    formulario_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_medico)
+):
+    """
+    Lista todas las respuestas de un formulario específico.
+    Solo accesible por el médico creador del formulario.
+    """
+    # Verificar que el formulario existe y pertenece al médico
+    formulario = db.query(Formulario).filter(Formulario.id == formulario_id).first()
+    if not formulario:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+    
+    if formulario.creador_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="No tienes acceso a las respuestas de este formulario")
+    
+    respuestas = db.query(RespuestaFormulario).filter(
+        RespuestaFormulario.formulario_id == formulario_id
+    ).order_by(RespuestaFormulario.timestamp.desc()).all()
+    
+    return respuestas
+
+
+@router.get("/asignaciones/{asignacion_id}/respuesta", response_model=RespuestaFormularioOut)
+def obtener_respuesta_asignacion(
+    asignacion_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene la respuesta de una asignación específica.
+    Accesible por el médico que creó el formulario o asignó.
+    """
+    asignacion = db.query(FormularioAsignacion).filter(
+        FormularioAsignacion.id == asignacion_id
+    ).first()
+    
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    
+    # Verificar permisos: médico que asignó o creador del formulario
+    if current_user["rol"] == "medico":
+        formulario = db.query(Formulario).filter(Formulario.id == asignacion.formulario_id).first()
+        if asignacion.asignado_por != current_user["id"] and formulario.creador_id != current_user["id"]:
+            raise HTTPException(status_code=403, detail="No tienes acceso a esta respuesta")
+    
+    respuesta = db.query(RespuestaFormulario).filter(
+        RespuestaFormulario.asignacion_id == asignacion_id
+    ).first()
+    
+    if not respuesta:
+        raise HTTPException(status_code=404, detail="No hay respuesta para esta asignación")
+    
+    return respuesta
+
+
+@router.get("/paciente/{paciente_id}/formularios-completados")
+def obtener_formularios_completados_paciente(
+    paciente_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_medico)
+):
+    """
+    Obtiene todos los formularios completados por un paciente específico.
+    Solo accesible por médicos que tienen asignado al paciente.
+    """
+    from app.models.models import Asignacion
+    
+    # Verificar que el médico tiene asignado al paciente
+    asignacion_medico = db.query(Asignacion).filter(
+        Asignacion.medico_id == current_user["id"],
+        Asignacion.paciente_id == paciente_id,
+        Asignacion.activo == True
+    ).first()
+    
+    if not asignacion_medico:
+        raise HTTPException(
+            status_code=403, 
+            detail="No tienes este paciente asignado"
+        )
+    
+    # Obtener asignaciones de formularios del paciente
+    asignaciones = db.query(FormularioAsignacion).join(Formulario).filter(
+        FormularioAsignacion.paciente_id == paciente_id
+    ).order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
+    
+    resultado = []
+    for asig in asignaciones:
+        # Buscar respuesta si existe
+        respuesta = db.query(RespuestaFormulario).filter(
+            RespuestaFormulario.asignacion_id == asig.id
+        ).first()
+        
+        resultado.append({
+            "asignacion_id": asig.id,
+            "formulario_id": asig.formulario_id,
+            "formulario_titulo": asig.formulario.titulo,
+            "formulario_tipo": asig.formulario.tipo,
+            "fecha_asignacion": asig.fecha_asignacion.isoformat(),
+            "fecha_expiracion": asig.fecha_expiracion.isoformat() if asig.fecha_expiracion else None,
+            "fecha_completado": asig.fecha_completado.isoformat() if asig.fecha_completado else None,
+            "estado": asig.estado,
+            "numero_instancia": asig.numero_instancia,
+            "tiene_respuesta": respuesta is not None,
+            "respuesta": {
+                "id": respuesta.id,
+                "respuestas": respuesta.respuestas,
+                "timestamp": respuesta.timestamp.isoformat()
+            } if respuesta else None
+        })
+    
+    return resultado

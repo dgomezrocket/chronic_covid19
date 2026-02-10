@@ -1,20 +1,34 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
-import { RolEnum } from '@chronic-covid19/shared-types';
+import { RolEnum, FormularioAsignacionDetalle } from '@chronic-covid19/shared-types';
+import { apiClient } from '@chronic-covid19/api-client';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuthStore();
+  const [formularios, setFormularios] = useState<FormularioAsignacionDetalle[]>([]);
+  const [loadingFormularios, setLoadingFormularios] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
       router.push('/login');
     }
   }, [isAuthenticated, user, router]);
+
+  // Cargar formularios asignados si es paciente (TODOS: pendientes y completados)
+  useEffect(() => {
+    if (user?.rol === RolEnum.PACIENTE) {
+      setLoadingFormularios(true);
+      apiClient.getMisFormulariosAsignados()
+        .then(setFormularios)
+        .catch(console.error)
+        .finally(() => setLoadingFormularios(false));
+    }
+  }, [user]);
 
   const handleLogout = () => {
     logout();
@@ -236,7 +250,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {/* ========== CARDS PARA OTROS ROLES (mantener los existentes) ========== */}
+          {/* ========== CARDS PARA OTROS ROLES ========== */}
 
           {/* Card: Mensajes (Pacientes y Médicos) */}
           {(user.rol === RolEnum.PACIENTE || user.rol === RolEnum.MEDICO) && (
@@ -262,121 +276,153 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Card: Formularios (Pacientes) */}
+          {/* Card: Formularios (Pacientes) - AHORA FUNCIONAL */}
           {user.rol === RolEnum.PACIENTE && (
-            <div className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group cursor-not-allowed opacity-60">
+            <div className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group">
               <div className="flex items-start space-x-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
                     Mis Formularios
-                    <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">Próximamente</span>
+                    {formularios.filter((f) => f.estado === 'pendiente').length > 0 && (
+                      <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
+                        {formularios.filter((f) => f.estado === 'pendiente').length} pendiente(s)
+                      </span>
+                    )}
                   </h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
+                  <p className="text-gray-600 text-sm leading-relaxed mb-3">
                     Completa formularios de salud y seguimiento asignados por tu médico
                   </p>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Card: Mis Pacientes (Médicos) */}
-          {user.rol === RolEnum.MEDICO && (
-            <div className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group cursor-not-allowed opacity-60">
-              <div className="flex items-start space-x-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
-                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    Mis Pacientes
-                    <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">Próximamente</span>
-                  </h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                    Gestiona y da seguimiento a tus pacientes asignados
-                  </p>
+                  {loadingFormularios ? (
+                    <div className="flex items-center text-sm text-gray-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2"></div>
+                      Cargando formularios...
+                    </div>
+                  ) : formularios.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic">No tienes formularios asignados</p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {formularios.map((asignacion) => (
+                        <Link
+                          key={asignacion.id}
+                          href={
+                            asignacion.estado === 'completado'
+                              ? `/dashboard/paciente/formularios/${asignacion.id}/respuesta`
+                              : `/dashboard/paciente/formularios/${asignacion.id}`
+                          }
+                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-purple-50 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {asignacion.formulario_titulo || 'Formulario'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {asignacion.estado === 'completado'
+                                ? `Completado: ${asignacion.fecha_completado ? new Date(asignacion.fecha_completado).toLocaleDateString('es-PY') : ''}`
+                                : asignacion.fecha_expiracion
+                                  ? `Vence: ${new Date(asignacion.fecha_expiracion).toLocaleDateString('es-PY')}`
+                                  : 'Sin fecha límite'}
+                            </p>
+                          </div>
+                          <div className="flex items-center ml-2">
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              asignacion.estado === 'pendiente'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : asignacion.estado === 'completado'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {asignacion.estado === 'pendiente' ? 'Pendiente' :
+                               asignacion.estado === 'completado' ? 'Ver respuesta' : asignacion.estado}
+                            </span>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {/* Card: Crear Formularios (Médicos) */}
-        {user.rol === RolEnum.MEDICO && (
-          <Link
-            href="/dashboard/medico/formularios"
-            className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
-          >
-            <div className="flex items-start space-x-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+          {user.rol === RolEnum.MEDICO && (
+            <Link
+              href="/dashboard/medico/formularios"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
+                    Gestionar Formularios
+                  </h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    Diseña formularios personalizados para el seguimiento de tus pacientes
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
-                  Crear Formularios
-                </h3>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  Diseña formularios personalizados para el seguimiento de tus pacientes
-                </p>
-              </div>
-            </div>
-          </Link>
-        )}
-          {/* Card: Mis Pacientes (Médicos) - AHORA HABILITADO */}
-              {user.rol === RolEnum.MEDICO && (
-                <Link
-                  href="/dashboard/medico/pacientes"
-                  className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
-                >
-                  <div className="flex items-start space-x-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-teal-600 transition-colors">
-                        Mis Pacientes
-                      </h3>
-                      <p className="text-gray-600 text-sm leading-relaxed">
-                        Gestiona y da seguimiento a tus pacientes asignados
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              )}
-          {/* Card: Gestión de Pacientes (Coordinadores) - AHORA HABILITADO */}
-              {user.rol === RolEnum.COORDINADOR && (
-                <Link
-                  href="/dashboard/coordinador/asignaciones"
-                  className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
-                >
-                  <div className="flex items-start space-x-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
-                        Gestión de Pacientes
-                      </h3>
-                      <p className="text-gray-600 text-sm leading-relaxed">
-                        Administra y asigna pacientes a médicos del hospital
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              )}
+            </Link>
+          )}
 
-            {/* Card: Gestión de Médicos (Coordinadores) */}
+          {/* Card: Mis Pacientes (Médicos) - HABILITADO */}
+          {user.rol === RolEnum.MEDICO && (
+            <Link
+              href="/dashboard/medico/pacientes"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-teal-600 transition-colors">
+                    Mis Pacientes
+                  </h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    Gestiona y da seguimiento a tus pacientes asignados
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
+
+          {/* Card: Gestión de Pacientes (Coordinadores) - HABILITADO */}
+          {user.rol === RolEnum.COORDINADOR && (
+            <Link
+              href="/dashboard/coordinador/asignaciones"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
+                    Gestión de Pacientes
+                  </h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    Administra y asigna pacientes a médicos del hospital
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
+
+          {/* Card: Gestión de Médicos (Coordinadores) */}
           {user.rol === RolEnum.COORDINADOR && (
             <Link
               href="/dashboard/coordinador/medicos"

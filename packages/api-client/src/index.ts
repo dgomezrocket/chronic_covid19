@@ -38,6 +38,8 @@ import {
   FormularioAsignacionCreate,
   FormularioAsignacionDetalle,
   RespuestaFormularioCreate,
+  RespuestaFormulario,
+  FormularioPacienteDetalle,
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -980,11 +982,36 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
 
   /**
    * Obtiene mis formularios asignados (para pacientes)
+   * @param estado - Opcional: 'pendiente', 'completado', o 'todos'
    */
-  async getMisFormulariosAsignados(): Promise<FormularioAsignacionDetalle[]> {
+  async getMisFormulariosAsignados(estado?: 'pendiente' | 'completado' | 'todos'): Promise<FormularioAsignacionDetalle[]> {
     try {
+      const params = estado ? `?estado=${estado}` : '';
       const response = await this.client.get<FormularioAsignacionDetalle[]>(
-        '/formularios/mis-asignaciones'
+        `/formularios/mis-asignaciones${params}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene la respuesta del paciente a un formulario completado (solo lectura)
+   */
+  async getMiRespuestaFormulario(asignacionId: number): Promise<{
+    asignacion_id: number;
+    formulario_id: number;
+    formulario_titulo: string;
+    formulario_descripcion?: string;
+    preguntas: any[];
+    respuestas: Record<string, any>;
+    fecha_completado?: string;
+    timestamp_respuesta?: string;
+  }> {
+    try {
+      const response = await this.client.get(
+        `/formularios/mis-asignaciones/${asignacionId}/mi-respuesta`
       );
       return response.data;
     } catch (error) {
@@ -1003,6 +1030,50 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
       const response = await this.client.post<{ message: string }>(
         `/formularios/asignaciones/${asignacionId}/responder`,
         { respuestas }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+// ========== NUEVOS MÉTODOS PARA VER RESPUESTAS ==========
+
+  /**
+   * Obtiene las respuestas de un formulario específico (solo médico creador)
+   */
+  async getRespuestasFormulario(formularioId: number): Promise<RespuestaFormulario[]> {
+    try {
+      const response = await this.client.get<RespuestaFormulario[]>(
+        `/formularios/${formularioId}/respuestas`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene la respuesta de una asignación específica
+   */
+  async getRespuestaAsignacion(asignacionId: number): Promise<RespuestaFormulario> {
+    try {
+      const response = await this.client.get<RespuestaFormulario>(
+        `/formularios/asignaciones/${asignacionId}/respuesta`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene todos los formularios (completados y pendientes) de un paciente
+   */
+  async getFormulariosPaciente(pacienteId: number): Promise<FormularioPacienteDetalle[]> {
+    try {
+      const response = await this.client.get<FormularioPacienteDetalle[]>(
+        `/formularios/paciente/${pacienteId}/formularios-completados`
       );
       return response.data;
     } catch (error) {
