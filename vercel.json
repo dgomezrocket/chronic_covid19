@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "corepack enable pnpm && pnpm install",
+  "installCommand": "npm install -g pnpm@9 && pnpm install --no-frozen-lockfile",
   "buildCommand": "pnpm turbo run build --filter=web",
   "outputDirectory": "apps/web/.next",
   "framework": "nextjs"
