@@ -10,8 +10,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@chronic-covid19/api-client": "workspace:*",
-    "@chronic-covid19/shared-types": "workspace:*",
+    "@chronic-covid19/api-client": "file:../../packages/api-client",
+    "@chronic-covid19/shared-types": "file:../../packages/shared-types",
     "@hookform/resolvers": "^3.3.3",
     "axios": "^1.6.2",
     "date-fns": "^3.0.6",
