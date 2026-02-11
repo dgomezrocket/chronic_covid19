@@ -211,6 +211,7 @@ class RespuestaFormulario(Base):
     formulario = relationship("Formulario", back_populates="respuestas")
     asignacion = relationship("FormularioAsignacion", back_populates="respuestas")
 
+
 class Mensaje(Base):
     __tablename__ = "mensajes"
 
@@ -220,6 +221,8 @@ class Mensaje(Base):
     medico_id = Column(Integer, ForeignKey("medicos.id"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     leido = Column(Integer, default=0, nullable=False)  # 0 = no leído, 1 = leído
+
+    remitente_rol = Column(Enum(RolEnum), nullable=False, default=RolEnum.paciente)
 
     # Relaciones
     paciente = relationship("Paciente", back_populates="mensajes")

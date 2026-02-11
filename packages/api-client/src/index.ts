@@ -1081,6 +1081,77 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
     }
   }
 
+// ========== MENSAJES ENDPOINTS ==========
+
+  /**
+   * Obtiene todas las conversaciones del usuario actual
+   */
+  async getMisConversaciones(): Promise<any[]> {
+    try {
+      const response = await this.client.get('/mensajes/conversaciones');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene los mensajes de un chat específico
+   */
+  async getChatMessages(pacienteId: number, medicoId: number, skip: number = 0, limit: number = 50): Promise<any[]> {
+    try {
+      const response = await this.client.get(`/mensajes/chat/${pacienteId}/${medicoId}?skip=${skip}&limit=${limit}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Envía un mensaje (alternativa REST al WebSocket)
+   */
+  async enviarMensaje(data: { contenido: string; paciente_id: number; medico_id: number; remitente_rol: string }): Promise<any> {
+    try {
+      const response = await this.client.post('/mensajes/enviar', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Marca mensajes como leídos
+   */
+  async marcarMensajesLeidos(pacienteId: number, medicoId: number): Promise<void> {
+    try {
+      await this.client.put(`/mensajes/marcar-leidos/${pacienteId}/${medicoId}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene el conteo de mensajes no leídos
+   */
+  async getMensajesNoLeidosCount(): Promise<{ count: number }> {
+    try {
+      const response = await this.client.get<{ count: number }>('/mensajes/no-leidos/count');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+
+  /**
+   * Obtiene la URL del WebSocket para chat (sin token en query string)
+   */
+  getWebSocketUrl(pacienteId: number, medicoId: number): string {
+    const baseUrl = this.client.defaults.baseURL || 'http://localhost:8000';
+    const wsUrl = baseUrl.replace('http', 'ws');
+    return `${wsUrl}/mensajes/ws/${pacienteId}/${medicoId}`;
+  }
+
 
   // ========== ERROR HANDLING ==========
 
@@ -1107,7 +1178,6 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
     return error instanceof Error ? error : new Error('Error desconocido');
   }
 }
-
 
 
 // Export singleton instance

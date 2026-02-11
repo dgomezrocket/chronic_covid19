@@ -11,7 +11,8 @@ from app.routers import (
     admins,
     coordinadores,
     asignaciones,
-    formularios
+    formularios,
+    mensajes
 )
 
 app = FastAPI(
@@ -49,6 +50,8 @@ app.include_router(coordinadores.router, prefix="/coordinadores", tags=["Coordin
 app.include_router(asignaciones.router, prefix="/asignaciones", tags=["Asignaciones"])
 
 app.include_router(formularios.router, prefix="/formularios", tags=["Formularios"])
+
+app.include_router(mensajes.router, prefix="/mensajes", tags=["mensajes"])
 @app.get("/")
 async def root():
     return {

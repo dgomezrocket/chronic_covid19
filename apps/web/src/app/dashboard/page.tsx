@@ -9,9 +9,11 @@ import { apiClient } from '@chronic-covid19/api-client';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, token } = useAuthStore();
   const [formularios, setFormularios] = useState<FormularioAsignacionDetalle[]>([]);
   const [loadingFormularios, setLoadingFormularios] = useState(false);
+  const [mensajesNoLeidos, setMensajesNoLeidos] = useState(0);
+  const [loadingMensajes, setLoadingMensajes] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -19,16 +21,34 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, user, router]);
 
+  // Configurar token del API client
+  useEffect(() => {
+    if (token) {
+      apiClient.setToken(token);
+    }
+  }, [token]);
+
   // Cargar formularios asignados si es paciente (TODOS: pendientes y completados)
   useEffect(() => {
-    if (user?.rol === RolEnum.PACIENTE) {
+    if (user?.rol === RolEnum.PACIENTE && token) {
       setLoadingFormularios(true);
       apiClient.getMisFormulariosAsignados()
         .then(setFormularios)
         .catch(console.error)
         .finally(() => setLoadingFormularios(false));
     }
-  }, [user]);
+  }, [user, token]);
+
+  // Cargar conteo de mensajes no leídos para pacientes y médicos
+  useEffect(() => {
+    if ((user?.rol === RolEnum.PACIENTE || user?.rol === RolEnum.MEDICO) && token) {
+      setLoadingMensajes(true);
+      apiClient.getMensajesNoLeidosCount()
+        .then((data) => setMensajesNoLeidos(data.count))
+        .catch(console.error)
+        .finally(() => setLoadingMensajes(false));
+    }
+  }, [user, token]);
 
   const handleLogout = () => {
     logout();
@@ -254,26 +274,47 @@ export default function DashboardPage() {
 
           {/* Card: Mensajes (Pacientes y Médicos) */}
           {(user.rol === RolEnum.PACIENTE || user.rol === RolEnum.MEDICO) && (
-            <div className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group cursor-not-allowed opacity-60">
+            <Link
+              href="/dashboard/mensajes"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group relative"
+            >
+              {/* Badge de mensajes no leídos - posición absoluta */}
+              {mensajesNoLeidos > 0 && (
+                <div className="absolute -top-2 -right-2 z-10">
+                  <span className="flex items-center justify-center min-w-[24px] h-6 px-2 bg-red-500 text-white text-xs font-bold rounded-full shadow-lg animate-pulse">
+                    {mensajesNoLeidos > 99 ? '99+' : mensajesNoLeidos}
+                  </span>
+                </div>
+              )}
               <div className="flex items-start space-x-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                   </svg>
+                  {/* Indicador pequeño en el icono */}
+                  {mensajesNoLeidos > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                  )}
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors flex items-center flex-wrap gap-2">
                     Mensajes
-                    <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">Próximamente</span>
+                    {loadingMensajes ? (
+                      <span className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></span>
+                    ) : mensajesNoLeidos > 0 ? (
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-semibold">
+                        {mensajesNoLeidos} nuevo{mensajesNoLeidos !== 1 ? 's' : ''}
+                      </span>
+                    ) : null}
                   </h3>
                   <p className="text-gray-600 text-sm leading-relaxed">
                     {user.rol === RolEnum.PACIENTE
-                      ? 'Comunicación con tu médico asignado'
-                      : 'Comunicación con tus pacientes asignados'}
+                      ? 'Comunícate en tiempo real con tu médico asignado'
+                      : 'Chatea en tiempo real con tus pacientes asignados'}
                   </p>
                 </div>
               </div>
-            </div>
+            </Link>
           )}
 
           {/* Card: Formularios (Pacientes) - AHORA FUNCIONAL */}
