@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build --prefix packages/shared-types && npm run build --prefix packages/api-client && npm run build --prefix apps/web",
+  "buildCommand": "npm run build -w @chronic-covid19/shared-types && npm run build -w @chronic-covid19/api-client && npm run build -w web",
   "outputDirectory": "apps/web/.next",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "installCommand": "npm install --legacy-peer-deps"
 }
