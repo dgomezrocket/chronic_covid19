@@ -1,7 +1,7 @@
 {
   "version": 2,
   "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "cd apps/web && npm run build",
+  "buildCommand": "cd packages/shared-types && npm run build && cd ../api-client && npm run build && cd ../../apps/web && npm run build",
   "outputDirectory": "apps/web/.next",
   "framework": "nextjs"
 }
