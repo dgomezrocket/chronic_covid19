@@ -1,6 +1,6 @@
 {
   "version": 2,
   "buildCommand": "npm run build -w @chronic-covid19/shared-types && npm run build -w @chronic-covid19/api-client && npm run build -w web",
-  "outputDirectory": "apps/web/.next",
+  "outputDirectory": ".next",
   "installCommand": "npm install --legacy-peer-deps"
 }
