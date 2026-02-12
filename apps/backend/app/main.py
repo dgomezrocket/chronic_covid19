@@ -29,6 +29,8 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        "https://www.saludenmapa.com",
+        "https://saludenmapa.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],  # Permitir todos los métodos (GET, POST, PUT, DELETE, OPTIONS, etc.)
