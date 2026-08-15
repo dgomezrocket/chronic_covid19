@@ -19,6 +19,32 @@ def get_all_medicos(
     return medicos
 
 
+@router.get("/me", response_model=MedicoResponse)
+def get_mi_perfil_medico(
+        db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Devuelve los datos del médico autenticado, incluyendo sus hospitales.
+    Solo lectura y exclusivo para médicos: el médico se deriva del token
+    (nunca de un medico_id enviado por el cliente).
+    """
+    if current_user["rol"] != "medico":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para médicos"
+        )
+
+    medico = db.query(Medico).filter(Medico.id == current_user["id"]).first()
+    if not medico:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Médico no encontrado"
+        )
+
+    return medico
+
+
 @router.get("/{medico_id}", response_model=MedicoResponse)
 def get_medico(
         medico_id: int,
