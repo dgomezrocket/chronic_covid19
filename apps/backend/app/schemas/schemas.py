@@ -996,3 +996,61 @@ class EstadisticasGeneralesOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ================================================================
+# RESUMEN DE RESPUESTAS DE FORMULARIOS (pantalla "Respuestas Formularios")
+# ================================================================
+
+class RespuestaResumenItemOut(BaseModel):
+    """Fila del listado consolidado de asignaciones de formularios + estado de respuesta"""
+    asignacion_id: int
+    formulario_id: int
+    formulario_titulo: Optional[str] = None
+    estado: str
+    numero_instancia: int = 1
+    paciente_id: int
+    paciente_nombre: Optional[str] = None
+    paciente_documento: Optional[str] = None
+    medico_id: Optional[int] = None
+    medico_nombre: Optional[str] = None
+    hospital_id: Optional[int] = None
+    hospital_nombre: Optional[str] = None
+    fecha_asignacion: Optional[datetime] = None
+    fecha_completado: Optional[datetime] = None
+    tiene_respuesta: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class RespuestasResumenPaginadoOut(BaseModel):
+    """Envoltorio paginado para el listado de respuestas/asignaciones"""
+    total: int
+    items: List[RespuestaResumenItemOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class RespuestaFormularioDetalleOut(BaseModel):
+    """Detalle de una asignación con preguntas + respuestas para vista de solo lectura"""
+    asignacion_id: int
+    formulario_id: int
+    formulario_titulo: Optional[str] = None
+    formulario_descripcion: Optional[str] = None
+    preguntas: List[dict] = []
+    respuestas: Optional[dict] = None
+    estado: str
+    paciente_id: int
+    paciente_nombre: Optional[str] = None
+    paciente_documento: Optional[str] = None
+    medico_id: Optional[int] = None
+    medico_nombre: Optional[str] = None
+    hospital_id: Optional[int] = None
+    hospital_nombre: Optional[str] = None
+    fecha_asignacion: Optional[datetime] = None
+    fecha_completado: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

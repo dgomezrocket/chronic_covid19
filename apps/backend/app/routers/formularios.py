@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, Optional
 from datetime import datetime
 
 from app.db.db import get_db
-from app.models.models import Formulario, FormularioAsignacion, RespuestaFormulario, Paciente, Medico
+from app.models.models import (
+    Formulario, FormularioAsignacion, RespuestaFormulario, Paciente, Medico, Asignacion
+)
 from app.schemas.schemas import (
     FormularioCreate, FormularioUpdate, FormularioOut, FormularioListOut,
     FormularioAsignacionCreate, FormularioAsignacionOut, FormularioAsignacionDetalleOut,
-    RespuestaFormularioCreate, RespuestaFormularioOut
+    RespuestaFormularioCreate, RespuestaFormularioOut,
+    RespuestaResumenItemOut, RespuestasResumenPaginadoOut, RespuestaFormularioDetalleOut
 )
 from app.core.security import get_current_user
 
@@ -125,25 +128,6 @@ def listar_formularios(
         query = query.filter(Formulario.creador_id == current_user["id"])
     
     return query.order_by(Formulario.fecha_creacion.desc()).all()
-
-
-@router.get("/{formulario_id}", response_model=FormularioOut)
-def obtener_formulario(
-    formulario_id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """Obtiene un formulario por ID"""
-    formulario = db.query(Formulario).filter(Formulario.id == formulario_id).first()
-    
-    if not formulario:
-        raise HTTPException(status_code=404, detail="Formulario no encontrado")
-    
-    # Médico solo puede ver sus propios formularios
-    if current_user["rol"] == "medico" and formulario.creador_id != current_user["id"]:
-        raise HTTPException(status_code=403, detail="No tienes acceso a este formulario")
-    
-    return formulario
 
 
 @router.post("/", response_model=FormularioOut, status_code=status.HTTP_201_CREATED)
@@ -437,5 +421,235 @@ def obtener_formularios_completados_paciente(
                 "timestamp": respuesta.timestamp.isoformat()
             } if respuesta else None
         })
-    
+
     return resultado
+
+
+# ================================================================
+# PANTALLA "RESPUESTAS FORMULARIOS" (médico + admin)
+# ================================================================
+# Listado consolidado de asignaciones de formularios (respondidas y pendientes)
+# con alcance por rol reforzado en backend. Se define un endpoint dedicado para
+# NO debilitar las restricciones de las rutas existentes (que autorizan por
+# creador/asignador). Aquí el alcance del médico se basa en sus pacientes
+# activamente asignados (tabla Asignacion), como pediste.
+
+def _pacientes_ids_de_medico(db: Session, medico_id: int) -> List[int]:
+    """IDs de pacientes actualmente asignados a un médico (Asignacion.activo == True)."""
+    filas = db.query(Asignacion.paciente_id).filter(
+        Asignacion.medico_id == medico_id,
+        Asignacion.activo == True
+    ).distinct().all()
+    return [f[0] for f in filas]
+
+
+def _mapa_medico_tratante(db: Session, pacientes_ids: List[int]) -> dict:
+    """Mapea paciente_id -> (medico_id, medico_nombre) usando la asignación activa."""
+    if not pacientes_ids:
+        return {}
+    filas = db.query(
+        Asignacion.paciente_id, Medico.id, Medico.nombre
+    ).join(Medico, Asignacion.medico_id == Medico.id).filter(
+        Asignacion.paciente_id.in_(pacientes_ids),
+        Asignacion.activo == True
+    ).all()
+    mapa: dict = {}
+    for paciente_id, medico_id, medico_nombre in filas:
+        # Si hubiera varias asignaciones activas, se conserva la primera encontrada
+        mapa.setdefault(paciente_id, (medico_id, medico_nombre))
+    return mapa
+
+
+@router.get("/respuestas", response_model=RespuestasResumenPaginadoOut)
+def listar_resumen_respuestas(
+    paciente: Optional[str] = Query(None, description="Búsqueda parcial por nombre o documento"),
+    estado: Optional[str] = Query(None, description="pendiente | completado | expirado | cancelado"),
+    medico_id: Optional[int] = Query(None, description="Solo ADMIN: filtrar por médico tratante"),
+    hospital_id: Optional[int] = Query(None, description="Solo ADMIN: filtrar por hospital del paciente"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Listado consolidado de asignaciones de formularios a pacientes (respondidas y
+    pendientes), con paginación y filtros.
+
+    Alcance por rol (reforzado en backend):
+      - MEDICO: únicamente asignaciones de sus pacientes activos. Se IGNORAN los
+        parámetros medico_id / hospital_id (no amplían el alcance).
+      - ADMIN: todo el sistema; puede filtrar por medico_id y hospital_id.
+      - PACIENTE / COORDINADOR: 403.
+    """
+    rol = current_user["rol"]
+    if rol not in ("medico", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a esta información"
+        )
+
+    query = db.query(FormularioAsignacion).options(
+        joinedload(FormularioAsignacion.paciente).joinedload(Paciente.hospital),
+        joinedload(FormularioAsignacion.formulario)
+    ).join(Formulario, FormularioAsignacion.formulario_id == Formulario.id
+    ).join(Paciente, FormularioAsignacion.paciente_id == Paciente.id)
+
+    if rol == "medico":
+        # El alcance del médico deriva SIEMPRE del token, no de parámetros del cliente.
+        pacientes_ids = _pacientes_ids_de_medico(db, current_user["id"])
+        if not pacientes_ids:
+            return {"total": 0, "items": []}
+        query = query.filter(FormularioAsignacion.paciente_id.in_(pacientes_ids))
+        # medico_id / hospital_id entrantes se ignoran deliberadamente para el médico.
+    else:  # admin
+        if medico_id is not None:
+            pacientes_medico = _pacientes_ids_de_medico(db, medico_id)
+            if not pacientes_medico:
+                return {"total": 0, "items": []}
+            query = query.filter(FormularioAsignacion.paciente_id.in_(pacientes_medico))
+        if hospital_id is not None:
+            query = query.filter(Paciente.hospital_id == hospital_id)
+
+    if paciente:
+        patron = f"%{paciente.lower()}%"
+        query = query.filter(or_(
+            func.lower(Paciente.nombre).like(patron),
+            func.lower(Paciente.documento).like(patron)
+        ))
+
+    if estado and estado.lower() != "todos":
+        query = query.filter(FormularioAsignacion.estado == estado)
+
+    total = query.count()
+
+    asignaciones = query.order_by(
+        FormularioAsignacion.fecha_asignacion.desc()
+    ).offset(skip).limit(limit).all()
+
+    # Enriquecimiento sin N+1
+    pacientes_pagina = list({a.paciente_id for a in asignaciones})
+    mapa_medico = _mapa_medico_tratante(db, pacientes_pagina)
+
+    asignacion_ids = [a.id for a in asignaciones]
+    con_respuesta = set()
+    if asignacion_ids:
+        filas_resp = db.query(RespuestaFormulario.asignacion_id).filter(
+            RespuestaFormulario.asignacion_id.in_(asignacion_ids)
+        ).all()
+        con_respuesta = {f[0] for f in filas_resp}
+
+    items = []
+    for asig in asignaciones:
+        medico_id_row, medico_nombre_row = mapa_medico.get(asig.paciente_id, (None, None))
+        hospital = asig.paciente.hospital if asig.paciente else None
+        items.append({
+            "asignacion_id": asig.id,
+            "formulario_id": asig.formulario_id,
+            "formulario_titulo": asig.formulario.titulo if asig.formulario else None,
+            "estado": asig.estado,
+            "numero_instancia": asig.numero_instancia,
+            "paciente_id": asig.paciente_id,
+            "paciente_nombre": asig.paciente.nombre if asig.paciente else None,
+            "paciente_documento": asig.paciente.documento if asig.paciente else None,
+            "medico_id": medico_id_row,
+            "medico_nombre": medico_nombre_row,
+            "hospital_id": hospital.id if hospital else None,
+            "hospital_nombre": hospital.nombre if hospital else None,
+            "fecha_asignacion": asig.fecha_asignacion,
+            "fecha_completado": asig.fecha_completado,
+            "tiene_respuesta": asig.id in con_respuesta,
+        })
+
+    return {"total": total, "items": items}
+
+
+@router.get("/respuestas/{asignacion_id}", response_model=RespuestaFormularioDetalleOut)
+def obtener_detalle_respuesta(
+    asignacion_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Detalle de solo lectura de una asignación: preguntas del formulario + respuestas
+    del paciente (si existen), con datos de paciente, médico y hospital.
+
+    Aplica el MISMO alcance que el listado:
+      - MEDICO: el paciente debe estar activamente asignado a él (Asignacion).
+      - ADMIN: acceso global.
+      - PACIENTE / COORDINADOR: 403.
+    """
+    rol = current_user["rol"]
+    if rol not in ("medico", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a esta información"
+        )
+
+    asignacion = db.query(FormularioAsignacion).options(
+        joinedload(FormularioAsignacion.paciente).joinedload(Paciente.hospital),
+        joinedload(FormularioAsignacion.formulario)
+    ).filter(FormularioAsignacion.id == asignacion_id).first()
+
+    if not asignacion:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+
+    if rol == "medico":
+        tiene_paciente = db.query(Asignacion).filter(
+            Asignacion.medico_id == current_user["id"],
+            Asignacion.paciente_id == asignacion.paciente_id,
+            Asignacion.activo == True
+        ).first()
+        if not tiene_paciente:
+            raise HTTPException(
+                status_code=403,
+                detail="No tienes este paciente asignado"
+            )
+
+    respuesta = db.query(RespuestaFormulario).filter(
+        RespuestaFormulario.asignacion_id == asignacion_id
+    ).first()
+
+    mapa_medico = _mapa_medico_tratante(db, [asignacion.paciente_id])
+    medico_id_row, medico_nombre_row = mapa_medico.get(asignacion.paciente_id, (None, None))
+    hospital = asignacion.paciente.hospital if asignacion.paciente else None
+    formulario = asignacion.formulario
+
+    return {
+        "asignacion_id": asignacion.id,
+        "formulario_id": asignacion.formulario_id,
+        "formulario_titulo": formulario.titulo if formulario else None,
+        "formulario_descripcion": formulario.descripcion if formulario else None,
+        "preguntas": (formulario.preguntas if formulario and formulario.preguntas else []),
+        "respuestas": respuesta.respuestas if respuesta else None,
+        "estado": asignacion.estado,
+        "paciente_id": asignacion.paciente_id,
+        "paciente_nombre": asignacion.paciente.nombre if asignacion.paciente else None,
+        "paciente_documento": asignacion.paciente.documento if asignacion.paciente else None,
+        "medico_id": medico_id_row,
+        "medico_nombre": medico_nombre_row,
+        "hospital_id": hospital.id if hospital else None,
+        "hospital_nombre": hospital.nombre if hospital else None,
+        "fecha_asignacion": asignacion.fecha_asignacion,
+        "fecha_completado": asignacion.fecha_completado,
+    }
+
+
+# Nota: esta ruta genérica de un solo segmento se define al final a propósito,
+# para que rutas literales como "/respuestas" se resuelvan antes que "/{formulario_id}".
+@router.get("/{formulario_id}", response_model=FormularioOut)
+def obtener_formulario(
+    formulario_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtiene un formulario por ID"""
+    formulario = db.query(Formulario).filter(Formulario.id == formulario_id).first()
+
+    if not formulario:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+
+    # Médico solo puede ver sus propios formularios
+    if current_user["rol"] == "medico" and formulario.creador_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="No tienes acceso a este formulario")
+
+    return formulario

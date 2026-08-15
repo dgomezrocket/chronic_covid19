@@ -450,3 +450,60 @@ export interface AsignacionConRespuesta extends FormularioAsignacion {
   tiene_respuesta: boolean;
   respuesta?: RespuestaFormulario;
 }
+
+// ========== RESUMEN DE RESPUESTAS (pantalla "Respuestas Formularios") ==========
+
+/** Fila del listado consolidado de asignaciones de formularios + estado de respuesta */
+export interface ResumenRespuestaItem {
+  asignacion_id: number;
+  formulario_id: number;
+  formulario_titulo?: string;
+  estado: EstadoAsignacion;
+  numero_instancia: number;
+  paciente_id: number;
+  paciente_nombre?: string;
+  paciente_documento?: string;
+  medico_id?: number;
+  medico_nombre?: string;
+  hospital_id?: number;
+  hospital_nombre?: string;
+  fecha_asignacion?: string;
+  fecha_completado?: string;
+  tiene_respuesta: boolean;
+}
+
+/** Respuesta paginada del endpoint GET /formularios/respuestas */
+export interface ResumenRespuestasResponse {
+  total: number;
+  items: ResumenRespuestaItem[];
+}
+
+/** Filtros del listado de respuestas (los de médico se ignoran/derivan en backend) */
+export interface FiltrosRespuestas {
+  paciente?: string;
+  estado?: EstadoAsignacion | 'todos';
+  medico_id?: number;
+  hospital_id?: number;
+  skip?: number;
+  limit?: number;
+}
+
+/** Detalle de solo lectura: preguntas + respuestas de una asignación */
+export interface RespuestaFormularioDetalle {
+  asignacion_id: number;
+  formulario_id: number;
+  formulario_titulo?: string;
+  formulario_descripcion?: string;
+  preguntas: PreguntaFormulario[];
+  respuestas?: Record<string, any>;
+  estado: EstadoAsignacion;
+  paciente_id: number;
+  paciente_nombre?: string;
+  paciente_documento?: string;
+  medico_id?: number;
+  medico_nombre?: string;
+  hospital_id?: number;
+  hospital_nombre?: string;
+  fecha_asignacion?: string;
+  fecha_completado?: string;
+}

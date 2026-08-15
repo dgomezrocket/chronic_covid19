@@ -40,6 +40,9 @@ import {
   RespuestaFormularioCreate,
   RespuestaFormulario,
   FormularioPacienteDetalle,
+  FiltrosRespuestas,
+  ResumenRespuestasResponse,
+  RespuestaFormularioDetalle,
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -1074,6 +1077,49 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
     try {
       const response = await this.client.get<FormularioPacienteDetalle[]>(
         `/formularios/paciente/${pacienteId}/formularios-completados`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Listado consolidado paginado de asignaciones de formularios + estado de respuesta.
+   * El backend refuerza el alcance por rol: el médico solo ve a sus pacientes activos
+   * (los filtros medico_id / hospital_id se ignoran para médicos).
+   */
+  async getResumenRespuestas(
+    filtros: FiltrosRespuestas = {}
+  ): Promise<ResumenRespuestasResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (filtros.paciente) params.append('paciente', filtros.paciente);
+      if (filtros.estado && filtros.estado !== 'todos') params.append('estado', filtros.estado);
+      if (filtros.medico_id != null) params.append('medico_id', filtros.medico_id.toString());
+      if (filtros.hospital_id != null) params.append('hospital_id', filtros.hospital_id.toString());
+      params.append('skip', (filtros.skip ?? 0).toString());
+      params.append('limit', (filtros.limit ?? 50).toString());
+
+      const response = await this.client.get<ResumenRespuestasResponse>(
+        `/formularios/respuestas?${params.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Detalle de solo lectura (preguntas + respuestas) de una asignación.
+   * Mismo alcance por rol que el listado.
+   */
+  async getRespuestaFormularioDetalle(
+    asignacionId: number
+  ): Promise<RespuestaFormularioDetalle> {
+    try {
+      const response = await this.client.get<RespuestaFormularioDetalle>(
+        `/formularios/respuestas/${asignacionId}`
       );
       return response.data;
     } catch (error) {
