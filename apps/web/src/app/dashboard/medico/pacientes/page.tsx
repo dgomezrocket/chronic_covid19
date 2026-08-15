@@ -165,6 +165,25 @@ export default function MedicoPacientesPage() {
     });
   };
 
+  // Decodifica secuencias Unicode escapadas (ej: "\u00bf" -> "¿")
+  // que pudieron haber quedado guardadas literalmente en la BD.
+  const decodeUnicodeEscapes = (value: unknown): string => {
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    if (!str.includes('\\u')) return str;
+    try {
+      // JSON.parse maneja correctamente todas las secuencias \uXXXX
+      return JSON.parse(
+        `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\\\\u/g, '\\u')}"`
+      );
+    } catch {
+      // Fallback manual por si acaso
+      return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      );
+    }
+  };
+
   // Filtrar pacientes por búsqueda
   const pacientesFiltrados = pacientes.filter((paciente) => {
     if (!searchQuery) return true;
@@ -444,7 +463,7 @@ export default function MedicoPacientesPage() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h4 className="font-bold text-gray-900">
-                            {asignacion.formulario_titulo || `Formulario #${asignacion.formulario_id}`}
+                            {decodeUnicodeEscapes(asignacion.formulario_titulo) || `Formulario #${asignacion.formulario_id}`}
                           </h4>
                           <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-600">
                             <span>📅 Asignado: {formatDate(asignacion.fecha_asignacion)}</span>
@@ -504,7 +523,7 @@ export default function MedicoPacientesPage() {
                 <div>
                   <h2 className="text-xl font-bold text-white">Respuestas del Formulario</h2>
                   <p className="text-green-100 mt-1">
-                    {asignacionSeleccionada.formulario_titulo || `Formulario #${asignacionSeleccionada.formulario_id}`}
+                    {decodeUnicodeEscapes(asignacionSeleccionada.formulario_titulo) || `Formulario #${asignacionSeleccionada.formulario_id}`}
                   </p>
                 </div>
                 <button
@@ -545,8 +564,8 @@ export default function MedicoPacientesPage() {
                     return Object.entries(respuestasData).map(([preguntaId, respuesta]) => {
                       // Buscar la pregunta en el formulario para obtener el label
                       const pregunta = formularioActual?.preguntas?.find((p: any) => p.id === preguntaId);
-                      const etiqueta = pregunta?.label || preguntaId;
-                  
+                      const etiqueta = decodeUnicodeEscapes(pregunta?.label || preguntaId);
+
                       // Formatear la respuesta según el tipo
                       let respuestaFormateada: string;
                       if (typeof respuesta === 'boolean') {
@@ -558,7 +577,7 @@ export default function MedicoPacientesPage() {
                       } else if (typeof respuesta === 'object' && respuesta !== null) {
                         respuestaFormateada = JSON.stringify(respuesta, null, 2);
                       } else {
-                        respuestaFormateada = String(respuesta || '—');
+                        respuestaFormateada = decodeUnicodeEscapes(respuesta ?? '—');
                       }
 
                       return (
