@@ -723,6 +723,8 @@ class FormularioAsignacionDetalleOut(FormularioAsignacionOut):
     formulario_titulo: Optional[str] = None
     formulario_tipo: str = ""
     formulario_descripcion: Optional[str] = None
+    paciente_nombre: Optional[str] = None
+    paciente_documento: Optional[str] = None
 
     class Config:
         from_attributes = True

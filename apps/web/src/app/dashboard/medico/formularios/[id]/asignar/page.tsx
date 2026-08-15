@@ -4,18 +4,17 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { apiClient } from '@chronic-covid19/api-client';
-import { Formulario, Paciente, FormularioAsignacion, RespuestaFormulario } from '@chronic-covid19/shared-types';
+import { Formulario, Paciente, FormularioAsignacionDetalle, RespuestaFormulario } from '@chronic-covid19/shared-types';
 import { useAuthStore } from '@/store/authStore';
 
 export default function AsignarFormularioPage() {
   const router = useRouter();
   const params = useParams();
   const formularioId = Number(params.id);
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
 
   const [formulario, setFormulario] = useState<Formulario | null>(null);
-  const [pacientes, setPacientes] = useState<Paciente[]>([]);
-  const [asignaciones, setAsignaciones] = useState<FormularioAsignacion[]>([]);
+  const [asignaciones, setAsignaciones] = useState<FormularioAsignacionDetalle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -28,14 +27,15 @@ export default function AsignarFormularioPage() {
 
   // Búsqueda de pacientes
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Paciente[]>([]);
   const [searching, setSearching] = useState(false);
 
   const [allPacientes, setAllPacientes] = useState<Paciente[]>([]);
+  const [historialSearchQuery, setHistorialSearchQuery] = useState('');
+  const [historialEstadoFilter, setHistorialEstadoFilter] = useState<'todos' | 'pendiente' | 'completado' | 'expirado' | 'cancelado'>('todos');
 
   // Estado para ver respuesta
   const [showRespuestaModal, setShowRespuestaModal] = useState(false);
-  const [selectedAsignacionId, setSelectedAsignacionId] = useState<number | null>(null);
+  const [, setSelectedAsignacionId] = useState<number | null>(null);
   const [respuestaActual, setRespuestaActual] = useState<RespuestaFormulario | null>(null);
   const [loadingRespuesta, setLoadingRespuesta] = useState(false);
 
@@ -53,7 +53,7 @@ export default function AsignarFormularioPage() {
     }
   }, [formularioId]);
 
-    // Cargar pacientes cuando se abre el modal
+  // Cargar pacientes cuando se abre el modal
   useEffect(() => {
     if (showModal && allPacientes.length === 0) {
       loadPacientes();
@@ -72,7 +72,6 @@ export default function AsignarFormularioPage() {
         telefono: r.telefono,
       } as Paciente));
       setAllPacientes(pacientesFormateados);
-      setSearchResults(pacientesFormateados);
     } catch (err) {
       console.error('Error al cargar pacientes:', err);
     } finally {
@@ -141,7 +140,6 @@ export default function AsignarFormularioPage() {
       setSelectedPacientes([]);
       setFechaExpiracion('');
       setSearchQuery('');
-      setSearchResults([]);
 
       // Recargar asignaciones
       await loadData();
@@ -212,7 +210,46 @@ export default function AsignarFormularioPage() {
     }
   };
 
-const verRespuesta = async (asignacionId: number) => {
+  const normalizeText = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  const filteredAsignaciones = asignaciones.filter((asignacion) => {
+    const pacienteNombre = decodeUnicodeEscapes(asignacion.paciente_nombre || '');
+    const pacienteDocumento = asignacion.paciente_documento || '';
+    const pacienteId = String(asignacion.paciente_id);
+    const searchTerm = normalizeText(historialSearchQuery.trim());
+    const estadoLabel = normalizeText(getEstadoLabel(asignacion.estado));
+    const estadoValue = normalizeText(asignacion.estado);
+
+    const matchesPaciente =
+      searchTerm.length === 0 ||
+      normalizeText(pacienteNombre).includes(searchTerm) ||
+      normalizeText(pacienteDocumento).includes(searchTerm) ||
+      pacienteId.includes(historialSearchQuery.trim()) ||
+      estadoLabel.includes(searchTerm) ||
+      estadoValue.includes(searchTerm);
+
+    const matchesEstado =
+      historialEstadoFilter === 'todos' || asignacion.estado === historialEstadoFilter;
+
+    return matchesPaciente && matchesEstado;
+  });
+
+  const getPacienteDisplayName = (asignacion: FormularioAsignacionDetalle) =>
+    decodeUnicodeEscapes(asignacion.paciente_nombre || '').trim() || `Paciente #${asignacion.paciente_id}`;
+
+  const getPacienteInitials = (nombre: string) =>
+    nombre
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((parte) => parte.charAt(0).toUpperCase())
+      .join('') || 'P';
+
+  const verRespuesta = async (asignacionId: number) => {
     try {
       setLoadingRespuesta(true);
       setSelectedAsignacionId(asignacionId);
@@ -368,10 +405,39 @@ const verRespuesta = async (asignacionId: number) => {
         {/* Lista de Asignaciones */}
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="p-6 border-b border-gray-200">
-            <h3 className="text-xl font-bold text-gray-900">Historial de Asignaciones</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Haz clic en "Ver Respuesta" para ver las respuestas de los formularios completados
-            </p>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Historial de Asignaciones</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Haz clic en "Ver Respuesta" para ver las respuestas de los formularios completados
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={historialSearchQuery}
+                    onChange={(e) => setHistorialSearchQuery(e.target.value)}
+                    placeholder="Buscar por paciente o estado"
+                    className="w-full rounded-xl border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:w-72"
+                  />
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <select
+                  value={historialEstadoFilter}
+                  onChange={(e) => setHistorialEstadoFilter(e.target.value as 'todos' | 'pendiente' | 'completado' | 'expirado' | 'cancelado')}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="todos">Todos los estados</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="completado">Completado</option>
+                  <option value="expirado">Expirado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {asignaciones.length === 0 ? (
@@ -389,8 +455,17 @@ const verRespuesta = async (asignacionId: number) => {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            filteredAsignaciones.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <svg className="mx-auto mb-4 h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">Sin resultados</h4>
+                <p className="text-gray-600">No hay asignaciones que coincidan con la búsqueda o el estado seleccionado.</p>
+              </div>
+            ) : (
+             <div className="overflow-x-auto">
+               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -414,16 +489,24 @@ const verRespuesta = async (asignacionId: number) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {asignaciones.map((asignacion) => (
+                  {filteredAsignaciones.map((asignacion) => {
+                    const pacienteNombre = getPacienteDisplayName(asignacion);
+
+                    return (
                     <tr key={asignacion.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                            {asignacion.paciente_id}
+                            {getPacienteInitials(pacienteNombre)}
                           </div>
                           <div className="ml-3">
                             <p className="text-sm font-semibold text-gray-900">
-                              Paciente #{asignacion.paciente_id}
+                              {pacienteNombre}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {asignacion.paciente_documento
+                                ? `Doc: ${asignacion.paciente_documento}`
+                                : `ID: ${asignacion.paciente_id}`}
                             </p>
                           </div>
                         </div>
@@ -458,10 +541,12 @@ const verRespuesta = async (asignacionId: number) => {
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                   );
+                 })}
+               </tbody>
+             </table>
+             </div>
+            )
           )}
         </div>
 
@@ -487,7 +572,6 @@ const verRespuesta = async (asignacionId: number) => {
                     setShowModal(false);
                     setSelectedPacientes([]);
                     setSearchQuery('');
-                    setSearchResults([]);
                     setFechaExpiracion('');
                   }}
                   className="text-white hover:text-gray-200 transition-colors"
@@ -643,7 +727,6 @@ const verRespuesta = async (asignacionId: number) => {
                   setShowModal(false);
                   setSelectedPacientes([]);
                   setSearchQuery('');
-                  setSearchResults([]);
                   setFechaExpiracion('');
                 }}
                 className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-100 transition-colors"

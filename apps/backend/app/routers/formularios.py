@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
@@ -259,16 +259,31 @@ def asignar_formulario(
     return asignacion
 
 
-@router.get("/{formulario_id}/asignaciones", response_model=List[FormularioAsignacionOut])
+@router.get("/{formulario_id}/asignaciones", response_model=List[FormularioAsignacionDetalleOut])
 def listar_asignaciones_formulario(
     formulario_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """Lista las asignaciones de un formulario"""
-    return db.query(FormularioAsignacion).filter(
+    asignaciones = db.query(FormularioAsignacion).options(
+        joinedload(FormularioAsignacion.paciente),
+        joinedload(FormularioAsignacion.formulario)
+    ).filter(
         FormularioAsignacion.formulario_id == formulario_id
     ).order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
+
+    return [
+        {
+            **asignacion.__dict__,
+            "formulario_titulo": asignacion.formulario.titulo if asignacion.formulario else None,
+            "formulario_tipo": asignacion.formulario.tipo if asignacion.formulario else "",
+            "formulario_descripcion": asignacion.formulario.descripcion if asignacion.formulario else None,
+            "paciente_nombre": asignacion.paciente.nombre if asignacion.paciente else None,
+            "paciente_documento": asignacion.paciente.documento if asignacion.paciente else None,
+        }
+        for asignacion in asignaciones
+    ]
 
 
 @router.post("/asignaciones/{asignacion_id}/responder")

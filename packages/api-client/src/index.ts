@@ -955,9 +955,9 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   /**
    * Obtiene las asignaciones de un formulario
    */
-  async getAsignacionesFormulario(formularioId: number): Promise<FormularioAsignacion[]> {
+  async getAsignacionesFormulario(formularioId: number): Promise<FormularioAsignacionDetalle[]> {
     try {
-      const response = await this.client.get<FormularioAsignacion[]>(
+      const response = await this.client.get<FormularioAsignacionDetalle[]>(
         `/formularios/${formularioId}/asignaciones`
       );
       return response.data;
@@ -1188,4 +1188,3 @@ export default ApiClient;
 
 // Re-export validation schemas
 export * from './validation';
-

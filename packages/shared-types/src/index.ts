@@ -403,6 +403,8 @@ export interface FormularioAsignacionDetalle extends FormularioAsignacion {
   formulario_titulo?: string;
   formulario_tipo: string;
   formulario_descripcion?: string;
+  paciente_nombre?: string;
+  paciente_documento?: string;
 }
 
 // ========== RESPUESTAS DE FORMULARIOS ==========
