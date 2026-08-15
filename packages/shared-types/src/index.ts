@@ -265,6 +265,13 @@ export interface HospitalConDistancia extends Hospital {
   distancia_km?: number;
 }
 
+export interface HospitalesCercanosResponse {
+  tiene_ubicacion: boolean;
+  latitud?: number;
+  longitud?: number;
+  hospitales: HospitalConDistancia[];
+}
+
 export interface PacienteSinHospital {
   id: number;
   documento: string;

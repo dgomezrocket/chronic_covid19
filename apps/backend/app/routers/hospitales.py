@@ -2,13 +2,33 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException, 
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.db import get_db
-from app.models.models import Hospital
-from app.schemas.schemas import HospitalCreate, HospitalUpdate, HospitalOut
+from app.models.models import Hospital, Paciente
+from app.schemas.schemas import (
+    HospitalCreate,
+    HospitalUpdate,
+    HospitalOut,
+    HospitalesCercanosResponse,
+    HospitalConDistanciaOut,
+)
 from app.core.security import get_current_user
 import csv
 import io
+import math
 
 router = APIRouter()
+
+
+def _distancia_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calcula la distancia en km entre dos coordenadas usando la fórmula de Haversine."""
+    R = 6371  # Radio de la Tierra en km
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(d_lon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 @router.get("/", response_model=List[HospitalOut])
@@ -33,6 +53,64 @@ def get_all_hospitales(
     
     hospitales = query.offset(skip).limit(limit).all()
     return hospitales
+
+
+@router.get("/mis-cercanos", response_model=HospitalesCercanosResponse)
+def get_mis_hospitales_cercanos(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Devuelve los hospitales del sistema ordenados del más cercano al más lejano
+    respecto de la ubicación registrada del paciente autenticado.
+
+    La ubicación se obtiene siempre del paciente del token (nunca de un ID enviado
+    por el cliente). Solo accesible para pacientes.
+    """
+    # ✅ Validar que sea paciente
+    if current_user["rol"] != "paciente":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los pacientes pueden buscar hospitales cercanos"
+        )
+
+    paciente = db.query(Paciente).filter(Paciente.id == current_user["id"]).first()
+    if not paciente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paciente no encontrado"
+        )
+
+    # Sin ubicación registrada: no es un error, devolvemos la bandera para el frontend
+    if paciente.latitud is None or paciente.longitud is None:
+        return HospitalesCercanosResponse(
+            tiene_ubicacion=False,
+            latitud=None,
+            longitud=None,
+            hospitales=[]
+        )
+
+    hospitales = db.query(Hospital).all()
+    hospitales_con_distancia = []
+    for h in hospitales:
+        if h.latitud is None or h.longitud is None:
+            continue
+        distancia = _distancia_km(paciente.latitud, paciente.longitud, h.latitud, h.longitud)
+        hospitales_con_distancia.append(
+            HospitalConDistanciaOut.model_validate(
+                {**HospitalOut.model_validate(h).model_dump(), "distancia_km": round(distancia, 2)}
+            )
+        )
+
+    # Ordenar del más cercano al más lejano
+    hospitales_con_distancia.sort(key=lambda x: x.distancia_km if x.distancia_km is not None else float("inf"))
+
+    return HospitalesCercanosResponse(
+        tiene_ubicacion=True,
+        latitud=paciente.latitud,
+        longitud=paciente.longitud,
+        hospitales=hospitales_con_distancia
+    )
 
 
 @router.get("/{hospital_id}", response_model=HospitalOut)
