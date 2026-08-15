@@ -35,6 +35,29 @@ export default function VerRespuestaFormularioPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Decodifica secuencias Unicode escapadas que pudieron quedar guardadas
+  // literalmente en la BD. Ejemplo: "\u00bf" -> "¿"
+  const decodeUnicodeEscapes = (value: unknown): string => {
+    if (value == null) return '';
+
+    const str = typeof value === 'string' ? value : String(value);
+
+    if (!str.includes('\\u')) return str;
+
+    try {
+      return JSON.parse(
+        `"${str
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\\\\u/g, '\\u')}"`
+      );
+    } catch {
+      return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      );
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated || !user) {
       router.push('/login');
@@ -87,7 +110,23 @@ export default function VerRespuestaFormularioPage() {
         );
 
       default:
-        return <span className="text-gray-900">{String(valor)}</span>;
+        if (Array.isArray(valor)) {
+          return (
+            <span className="text-gray-900">
+              {valor.map(decodeUnicodeEscapes).join(', ')}
+            </span>
+          );
+        }
+
+        if (typeof valor === 'object') {
+          return (
+            <span className="text-gray-900 whitespace-pre-wrap">
+              {decodeUnicodeEscapes(JSON.stringify(valor, null, 2))}
+            </span>
+          );
+        }
+
+        return <span className="text-gray-900">{decodeUnicodeEscapes(valor)}</span>;
     }
   };
 
@@ -154,22 +193,24 @@ export default function VerRespuestaFormularioPage() {
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-3xl">
         {/* Header del formulario */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                {data.formulario_titulo}
-              </h1>
-              {data.formulario_descripcion && (
-                <p className="text-gray-600">{data.formulario_descripcion}</p>
-              )}
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                  {decodeUnicodeEscapes(data.formulario_titulo)}
+                </h1>
+                {data.formulario_descripcion && (
+                  <p className="text-gray-600">
+                    {decodeUnicodeEscapes(data.formulario_descripcion)}
+                  </p>
+                )}
+              </div>
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">
+                ✓ Completado
+              </span>
             </div>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">
-              ✓ Completado
-            </span>
-          </div>
 
-          {data.fecha_completado && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
+            {data.fecha_completado && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
               <p className="text-sm text-gray-500">
                 📅 Completado el: {new Date(data.fecha_completado).toLocaleDateString('es-PY', {
                   year: 'numeric',
@@ -197,19 +238,19 @@ export default function VerRespuestaFormularioPage() {
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Tus Respuestas</h2>
 
-          <div className="space-y-6">
-            {data.preguntas.map((campo, index) => (
-              <div key={campo.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {index + 1}. {campo.label}
-                  {campo.required && <span className="text-red-500 ml-1">*</span>}
-                </label>
-                <div className="mt-1 p-3 bg-gray-50 rounded-lg">
-                  {renderRespuesta(campo)}
-                </div>
+              <div className="space-y-6">
+                {data.preguntas.map((campo, index) => (
+                  <div key={campo.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {index + 1}. {decodeUnicodeEscapes(campo.label)}
+                      {campo.required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    <div className="mt-1 p-3 bg-gray-50 rounded-lg">
+                      {renderRespuesta(campo)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
           <div className="mt-8 pt-6 border-t border-gray-200">
             <Link
