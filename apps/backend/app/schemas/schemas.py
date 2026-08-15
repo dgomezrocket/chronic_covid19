@@ -64,6 +64,17 @@ class HospitalOut(HospitalBase):
 HospitalResponse = HospitalOut
 
 
+class HospitalConDistanciaOut(HospitalOut):
+    distancia_km: Optional[float] = None
+
+
+class HospitalesCercanosResponse(BaseModel):
+    tiene_ubicacion: bool
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    hospitales: List[HospitalConDistanciaOut] = []
+
+
 # ========== ESPECIALIDAD SCHEMAS ==========
 
 class EspecialidadBase(BaseModel):

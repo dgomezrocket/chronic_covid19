@@ -28,6 +28,7 @@ import {
   PacienteSinHospital,
   BuscarPacienteResult,
   HospitalConDistancia,
+  HospitalesCercanosResponse,
   OperacionExitosa,
   AsignacionSuccess,
     Formulario,
@@ -320,6 +321,21 @@ clearToken() {
   async getHospitalById(id: number): Promise<Hospital> {
     try {
       const response = await this.client.get<Hospital>(`/hospitales/${id}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene los hospitales cercanos a la ubicación registrada del paciente
+   * autenticado, ordenados del más cercano al más lejano. La ubicación se
+   * deriva del token en el backend (nunca de un ID enviado por el cliente).
+   * Solo accesible para pacientes.
+   */
+  async getMisHospitalesCercanos(): Promise<HospitalesCercanosResponse> {
+    try {
+      const response = await this.client.get<HospitalesCercanosResponse>('/hospitales/mis-cercanos');
       return response.data;
     } catch (error) {
       throw this.handleError(error);

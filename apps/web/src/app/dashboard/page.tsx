@@ -393,6 +393,31 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Card: Buscar Hospitales Cercanos (Pacientes) */}
+          {user.rol === RolEnum.PACIENTE && (
+            <Link
+              href="/dashboard/paciente/hospitales-cercanos"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-rose-600 transition-colors">
+                    Buscar Hospitales Cercanos
+                  </h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    Encuentra los hospitales más cercanos a tu ubicación registrada, con distancia, mapa y cómo llegar
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
+
           {/* Card: Crear Formularios (Médicos) */}
           {user.rol === RolEnum.MEDICO && (
             <Link
