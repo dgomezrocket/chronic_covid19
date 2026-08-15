@@ -207,6 +207,20 @@ clearToken() {
     }
   }
 
+  /**
+   * Obtiene los datos del médico autenticado (incluye sus hospitales).
+   * El médico se deriva del token en el backend (nunca de un ID enviado
+   * por el cliente). Solo lectura y exclusivo para médicos.
+   */
+  async getMiMedico(): Promise<Medico> {
+    try {
+      const response = await this.client.get<Medico>('/medicos/me');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   async updateMedico(id: number, data: Partial<Medico>): Promise<Medico> {
     try {
       const response = await this.client.put<Medico>(`/medicos/${id}`, data);
