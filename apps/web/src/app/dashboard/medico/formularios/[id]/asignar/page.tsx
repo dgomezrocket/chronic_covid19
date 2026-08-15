@@ -195,6 +195,23 @@ export default function AsignarFormularioPage() {
     }
   };
 
+  // Decodifica secuencias Unicode escapadas (ej: "\u00bf" -> "¿")
+  // que pudieron haber quedado guardadas literalmente en la BD.
+  const decodeUnicodeEscapes = (value: unknown): string => {
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    if (!str.includes('\\u')) return str;
+    try {
+      // JSON.parse maneja correctamente todas las secuencias \uXXXX
+      return JSON.parse(`"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\\\\u/g, '\\u')}"`);
+    } catch {
+      // Fallback manual por si acaso
+      return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      );
+    }
+  };
+
 const verRespuesta = async (asignacionId: number) => {
     try {
       setLoadingRespuesta(true);
@@ -303,9 +320,9 @@ const verRespuesta = async (asignacionId: number) => {
               </svg>
             </div>
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900">{formulario.titulo || 'Sin título'}</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{decodeUnicodeEscapes(formulario.titulo) || 'Sin título'}</h2>
               {formulario.descripcion && (
-                <p className="text-gray-600 mt-1">{formulario.descripcion}</p>
+                <p className="text-gray-600 mt-1">{decodeUnicodeEscapes(formulario.descripcion)}</p>
               )}
               <div className="flex items-center space-x-4 mt-3">
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-indigo-100 text-indigo-700">
@@ -657,7 +674,7 @@ const verRespuesta = async (asignacionId: number) => {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-white">Respuestas del Paciente</h2>
-                  <p className="text-green-100 mt-1">{formulario?.titulo}</p>
+                  <p className="text-green-100 mt-1">{decodeUnicodeEscapes(formulario?.titulo)}</p>
                 </div>
                 <button
                   onClick={() => {
@@ -698,7 +715,7 @@ const verRespuesta = async (asignacionId: number) => {
                         return Object.entries(respuestasData).map(([preguntaId, respuesta]) => {
                           // Buscar la pregunta en el formulario para obtener el label
                           const pregunta = formulario?.preguntas?.find(p => p.id === preguntaId);
-                          const etiqueta = pregunta?.label || preguntaId;
+                          const etiqueta = decodeUnicodeEscapes(pregunta?.label || preguntaId);
                           
                           // Formatear la respuesta según el tipo
                           let respuestaFormateada: string;
@@ -711,7 +728,7 @@ const verRespuesta = async (asignacionId: number) => {
                           } else if (typeof respuesta === 'object' && respuesta !== null) {
                             respuestaFormateada = JSON.stringify(respuesta, null, 2);
                           } else {
-                            respuestaFormateada = String(respuesta || '—');
+                            respuestaFormateada = decodeUnicodeEscapes(respuesta ?? '—');
                           }
 
                           return (
