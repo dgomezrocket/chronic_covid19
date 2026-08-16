@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.db import get_db
-from app.models.models import Paciente, Medico, Coordinador, Hospital, Admin, RolEnum  # Agregar Hospital aquí
+from app.models.models import Paciente, Medico, Coordinador, Hospital, Admin, RolEnum, Especialidad  # Agregar Hospital aquí
 from app.schemas.schemas import (
     PacienteCreate, MedicoCreate, CoordinadorCreate,
     Token, UserInfo
@@ -70,33 +70,9 @@ def register_paciente(paciente: PacienteCreate, db: Session = Depends(get_db)):
 @router.post("/register/medico", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
     """Registra un nuevo médico en el sistema"""
-    from app.models.models import Especialidad
+    from app.services.medico_service import crear_medico, MedicoValidationError
 
-    # Verificar si el email ya existe en médicos
-    existing_email = db.query(Medico).filter(Medico.email == medico.email).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El email ya está registrado"
-        )
-
-    # Verificar si el email ya existe en pacientes
-    existing_email_paciente = db.query(Paciente).filter(Paciente.email == medico.email).first()
-    if existing_email_paciente:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El email ya está registrado"
-        )
-
-    # Verificar si el documento ya existe
-    existing_doc = db.query(Medico).filter(Medico.documento == medico.documento).first()
-    if existing_doc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El documento de identidad ya está registrado"
-        )
-
-    # Verificar que las especialidades existan
+    # Verificar que las especialidades existan (por ID, solo activas)
     especialidades = []
     if medico.especialidad_ids:
         for esp_id in medico.especialidad_ids:
@@ -111,7 +87,7 @@ def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
                 )
             especialidades.append(especialidad)
 
-    # Verificar que los hospitales existan
+    # Verificar que los hospitales existan (por ID)
     hospitales = []
     if medico.hospital_ids:
         for hospital_id in medico.hospital_ids:
@@ -123,31 +99,21 @@ def register_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
                 )
             hospitales.append(hospital)
 
-    # Crear nuevo médico
-    hashed_password = get_password_hash(medico.password)
-    nuevo_medico = Medico(
-        documento=medico.documento,
-        nombre=medico.nombre,
-        email=medico.email,
-        telefono=medico.telefono,
-        hashed_password=hashed_password,
-        rol=RolEnum.medico
-    )
-
-    # Agregar el médico a la sesión PRIMERO
-    db.add(nuevo_medico)
-
-    # Flush para obtener el ID antes de asociar relaciones
-    db.flush()
-
-    # Asociar especialidades y hospitales
-    if especialidades:
-        nuevo_medico.especialidades = especialidades
-    if hospitales:
-        nuevo_medico.hospitales = hospitales
-
-    db.commit()
-    db.refresh(nuevo_medico)
+    # Crear el médico reutilizando la lógica compartida (valida email/documento, hashea, asocia M2M)
+    try:
+        nuevo_medico = crear_medico(
+            db,
+            documento=medico.documento,
+            nombre=medico.nombre,
+            email=medico.email,
+            telefono=medico.telefono,
+            password=medico.password,
+            especialidades=especialidades,
+            hospitales=hospitales,
+        )
+    except MedicoValidationError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Crear token
     access_token = create_access_token(
@@ -297,6 +263,7 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
         "rol": user.rol.value,
         "documento": user.documento if hasattr(user, 'documento') else None,
         "telefono": user.telefono if hasattr(user, 'telefono') else None,
+        "debe_cambiar_password": bool(getattr(user, "debe_cambiar_password", False)),
     }
 
 

@@ -12,7 +12,8 @@ from app.routers import (
     coordinadores,
     asignaciones,
     formularios,
-    mensajes
+    mensajes,
+    importacion_medicos
 )
 
 app = FastAPI(
@@ -50,6 +51,7 @@ app.include_router(admins.router, prefix="/admins", tags=["admins"])
 
 app.include_router(coordinadores.router, prefix="/coordinadores", tags=["Coordinadores"])
 app.include_router(asignaciones.router, prefix="/asignaciones", tags=["Asignaciones"])
+app.include_router(importacion_medicos.router, prefix="/importacion-medicos", tags=["Importación Médicos"])
 
 app.include_router(formularios.router, prefix="/formularios", tags=["Formularios"])
 

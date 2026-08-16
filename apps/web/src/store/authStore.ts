@@ -9,6 +9,7 @@ interface User {
   email: string;
   nombre: string;
   rol: RolEnum;  // ← CAMBIO: usar RolEnum en lugar de string
+  debe_cambiar_password?: boolean;
 }
 
 interface AuthStore {

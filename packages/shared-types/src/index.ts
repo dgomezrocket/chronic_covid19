@@ -25,6 +25,7 @@ export interface Usuario {
   email: string;
   rol: RolEnum;
   nombre: string;
+  debe_cambiar_password?: boolean;
 }
 
 export interface Paciente extends Usuario {
@@ -81,6 +82,23 @@ export interface RegisterMedicoData {
   password: string;
   especialidad_ids?: number[];
   hospital_ids?: number[];
+}
+
+// ========== IMPORTACIÓN MASIVA DE MÉDICOS ==========
+export interface MedicoImportErrorRow {
+  fila: number;
+  medico?: string;
+  resultado: string;
+}
+
+export interface MedicoImportResult {
+  hospital: string;
+  procesados: number;
+  creados: number;
+  con_error: number;
+  correos_enviados: number;
+  correos_con_error: number;
+  errores: MedicoImportErrorRow[];
 }
 
 export interface TokenResponse {

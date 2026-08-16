@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table, Boolean
+from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table, Boolean, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.db import Base
@@ -91,6 +91,9 @@ class Medico(Base):
     telefono = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     rol = Column(Enum(RolEnum), default=RolEnum.medico, nullable=False)
+    # Indica si el médico debe cambiar su contraseña en el próximo inicio de sesión
+    # (se activa en el alta masiva, donde la contraseña se genera automáticamente).
+    debe_cambiar_password = Column(Boolean, default=False, nullable=False, server_default=text("false"))
 
     # Relaciones Many-to-Many
     especialidades = relationship("Especialidad", secondary=medico_especialidad, back_populates="medicos")
