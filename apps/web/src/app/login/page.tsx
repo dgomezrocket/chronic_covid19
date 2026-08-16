@@ -59,6 +59,7 @@ export default function LoginPage() {
         email: userInfo.email,
         nombre: userInfo.nombre,
         rol: rol,
+        debe_cambiar_password: userInfo.debe_cambiar_password ?? false,
       },
       token: response.access_token,
     });

@@ -3,10 +3,48 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.db.db import get_db
 from app.models.models import Medico, Hospital, Especialidad, RolEnum
-from app.schemas.schemas import MedicoResponse, MedicoUpdate
-from app.core.security import get_current_user
+from app.schemas.schemas import MedicoResponse, MedicoUpdate, CambiarPasswordRequest
+from app.core.security import get_current_user, get_password_hash
 
 router = APIRouter()
+
+
+@router.post("/me/cambiar-password", status_code=status.HTTP_200_OK)
+def cambiar_mi_password(
+        payload: CambiarPasswordRequest,
+        db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user)
+):
+    """
+    Permite al médico autenticado cambiar su propia contraseña.
+    El médico se deriva del token (nunca de un id enviado por el cliente).
+    Al cambiarla, se limpia la marca `debe_cambiar_password`.
+    """
+    if current_user["rol"] != "medico":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para médicos"
+        )
+
+    nueva = (payload.password or "").strip()
+    if len(nueva) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña debe tener al menos 6 caracteres"
+        )
+
+    medico = db.query(Medico).filter(Medico.id == current_user["id"]).first()
+    if not medico:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Médico no encontrado"
+        )
+
+    medico.hashed_password = get_password_hash(nueva)
+    medico.debe_cambiar_password = False
+    db.commit()
+
+    return {"message": "Contraseña actualizada correctamente"}
 
 
 @router.get("/", response_model=List[MedicoResponse])

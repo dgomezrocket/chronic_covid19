@@ -155,6 +155,29 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        {/* Aviso: contraseña temporal (médicos importados) */}
+        {user.rol === RolEnum.MEDICO && user.debe_cambiar_password && (
+          <div className="mb-8 rounded-xl bg-yellow-50 border border-yellow-200 p-4 flex items-start justify-between gap-4">
+            <div className="flex items-start space-x-3">
+              <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <div>
+                <p className="font-semibold text-yellow-800">Debes cambiar tu contraseña</p>
+                <p className="text-sm text-yellow-700">
+                  Tu cuenta usa una contraseña temporal. Cámbiala para mayor seguridad.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/dashboard/cambiar-password"
+              className="whitespace-nowrap px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+            >
+              Cambiar contraseña
+            </Link>
+          </div>
+        )}
+
         {/* Dashboard Cards según el Rol */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Card: Mi Perfil (Todos los roles) */}
@@ -556,6 +579,30 @@ export default function DashboardPage() {
                   </h3>
                   <p className="text-gray-600 text-sm leading-relaxed">
                     Asigna y gestiona los médicos de tu hospital
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
+
+          {/* Card: Importación Masiva de Médicos (Coordinadores) */}
+          {user.rol === RolEnum.COORDINADOR && (
+            <Link
+              href="/dashboard/coordinador/importar-medicos"
+              className="card hover:shadow-xl transition-all duration-300 border border-gray-100 group"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
+                    Importación Masiva de Médicos
+                  </h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    Carga un Excel para dar de alta varios médicos de tu hospital y exporta el listado
                   </p>
                 </div>
               </div>

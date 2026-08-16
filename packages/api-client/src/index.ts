@@ -3,6 +3,7 @@ import {
   LoginCredentials,
   RegisterPacienteData,
   RegisterMedicoData,
+  MedicoImportResult,
   TokenResponse,
   Paciente,
   Medico,
@@ -409,6 +410,66 @@ clearToken() {
             'Content-Type': 'multipart/form-data',
           },
         }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== IMPORTACIÓN MASIVA DE MÉDICOS (Coordinador) ==========
+
+  /** Importa médicos desde un .xlsx. Se asocian automáticamente al hospital del coordinador. */
+  async importarMedicos(file: File): Promise<MedicoImportResult> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await this.client.post<MedicoImportResult>(
+        '/importacion-medicos/importar',
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          // La importación + envío de correos puede superar el timeout global (10s)
+          timeout: 120000,
+        }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Descarga la plantilla .xlsx (Blob) para la importación de médicos. */
+  async descargarPlantillaMedicos(): Promise<Blob> {
+    try {
+      const response = await this.client.get('/importacion-medicos/plantilla', {
+        responseType: 'blob',
+      });
+      return response.data as Blob;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Exporta a .xlsx (Blob) los médicos del hospital del coordinador. */
+  async exportarMedicos(): Promise<Blob> {
+    try {
+      const response = await this.client.get('/importacion-medicos/exportar', {
+        responseType: 'blob',
+      });
+      return response.data as Blob;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Cambia la contraseña del médico autenticado (limpia la marca de contraseña temporal). */
+  async cambiarMiPassword(password: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/medicos/me/cambiar-password',
+        { password }
       );
       return response.data;
     } catch (error) {

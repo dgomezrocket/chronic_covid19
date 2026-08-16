@@ -254,9 +254,15 @@ class UserInfo(BaseModel):
     email: str
     nombre: str
     rol: str
+    debe_cambiar_password: bool = False
 
     class Config:
         from_attributes = True
+
+
+class CambiarPasswordRequest(BaseModel):
+    """Solicitud de cambio de contraseña del propio usuario."""
+    password: str
 
 
 # ================================================================
@@ -1065,3 +1071,25 @@ class RespuestaFormularioDetalleOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ================================================================
+# IMPORTACIÓN MASIVA DE MÉDICOS
+# ================================================================
+
+class MedicoImportErrorRow(BaseModel):
+    """Fila del Excel que no pudo procesarse."""
+    fila: int
+    medico: Optional[str] = None
+    resultado: str
+
+
+class MedicoImportResult(BaseModel):
+    """Resumen del resultado de una importación masiva de médicos."""
+    hospital: str
+    procesados: int
+    creados: int
+    con_error: int
+    correos_enviados: int
+    correos_con_error: int
+    errores: List[MedicoImportErrorRow] = []
