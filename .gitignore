@@ -12,6 +12,7 @@ coverage
 out/
 build
 dist/
+next-env.d.ts
 
 # Expo
 .expo/
@@ -44,3 +45,6 @@ Thumbs.db
 .turbo
 
 .vercel
+
+# TypeScript
+*.tsbuildinfo
