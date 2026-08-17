@@ -38,13 +38,24 @@ load_dotenv(env_path)
 # Alembic Config
 config = context.config
 
-# Configurar la URL de conexión usando variables de entorno
-pg_user = os.environ.get("POSTGRES_USER")
-pg_password = os.environ.get("POSTGRES_PASSWORD")
-pg_server = os.environ.get("POSTGRES_SERVER")
-pg_db = os.environ.get("POSTGRES_DB")
-url = f"postgresql://{pg_user}:{pg_password}@{pg_server}/{pg_db}"
-config.set_main_option("sqlalchemy.url", url)
+# Configurar la URL de conexión.
+# IMPORTANTE: priorizar DATABASE_URL (la que usa la app en producción, p. ej. Railway),
+# con fallback a las variables POSTGRES_* para desarrollo local. Así Alembic migra
+# SIEMPRE la misma base de datos que usa la aplicación.
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    pg_user = os.environ.get("POSTGRES_USER", "postgres")
+    pg_password = os.environ.get("POSTGRES_PASSWORD", "")
+    pg_server = os.environ.get("POSTGRES_SERVER", "localhost")
+    pg_db = os.environ.get("POSTGRES_DB", "chronic_covid19")
+    database_url = f"postgresql://{pg_user}:{pg_password}@{pg_server}/{pg_db}"
+
+# Normalizar el esquema antiguo postgres:// -> postgresql:// (Railway/Heroku)
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+# Escapar % para el interpolador de ConfigParser (contraseñas con % en la URL)
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Configura logging
 if config.config_file_name is not None:
