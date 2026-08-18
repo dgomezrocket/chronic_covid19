@@ -43,6 +43,8 @@ export default function TabsLayout() {
         name="respuestas"
         options={{
           title: 'Respuestas',
+          // El Stack anidado (respuestas/_layout) provee sus propios headers.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-outline" color={color} size={size} />,
         }}
       />
