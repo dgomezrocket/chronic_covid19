@@ -107,7 +107,7 @@ export default function ResponderFormularioPage() {
     setError(null);
 
     try {
-      await apiClient.responderFormulario(asignacionId, { respuestas });
+      await apiClient.responderFormulario(asignacionId, respuestas);
       router.push('/dashboard?success=formulario-completado');
     } catch (err: any) {
       console.error('Error enviando respuesta:', err);
