@@ -1091,6 +1091,23 @@ class RespuestaFormularioDetalleOut(BaseModel):
         from_attributes = True
 
 
+class MiRespuestaFormularioOut(BaseModel):
+    """Respuesta del paciente a un formulario completado (endpoint mi-respuesta, solo lectura).
+
+    `preguntas` y `respuestas` se dejan como JSON permisivo (List[dict] / dict) para no
+    rechazar datos históricos (p. ej. tipos de pregunta 'texto'/'numero'/...). Las fechas
+    ya llegan serializadas a string ISO desde el handler.
+    """
+    asignacion_id: int
+    formulario_id: int
+    formulario_titulo: Optional[str] = None
+    formulario_descripcion: Optional[str] = None
+    preguntas: List[dict] = []
+    respuestas: dict = {}
+    fecha_completado: Optional[str] = None
+    timestamp_respuesta: Optional[str] = None
+
+
 # ================================================================
 # IMPORTACIÓN MASIVA DE MÉDICOS
 # ================================================================

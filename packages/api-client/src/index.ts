@@ -45,6 +45,7 @@ import {
   FiltrosRespuestas,
   ResumenRespuestasResponse,
   RespuestaFormularioDetalle,
+  MiRespuestaFormulario,
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -1117,18 +1118,9 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   /**
    * Obtiene la respuesta del paciente a un formulario completado (solo lectura)
    */
-  async getMiRespuestaFormulario(asignacionId: number): Promise<{
-    asignacion_id: number;
-    formulario_id: number;
-    formulario_titulo: string;
-    formulario_descripcion?: string;
-    preguntas: any[];
-    respuestas: Record<string, any>;
-    fecha_completado?: string;
-    timestamp_respuesta?: string;
-  }> {
+  async getMiRespuestaFormulario(asignacionId: number): Promise<MiRespuestaFormulario> {
     try {
-      const response = await this.client.get(
+      const response = await this.client.get<MiRespuestaFormulario>(
         `/formularios/mis-asignaciones/${asignacionId}/mi-respuesta`
       );
       return response.data;

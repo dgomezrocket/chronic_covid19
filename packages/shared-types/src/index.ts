@@ -541,3 +541,17 @@ export interface RespuestaFormularioDetalle {
   fecha_asignacion?: string;
   fecha_completado?: string;
 }
+
+/** Respuesta del paciente a un formulario completado (endpoint mi-respuesta, solo lectura). */
+export interface MiRespuestaFormulario {
+  asignacion_id: number;
+  formulario_id: number;
+  formulario_titulo: string;
+  formulario_descripcion?: string;
+  preguntas: PreguntaFormulario[];
+  // Se mantiene `any` a propósito: soporta el formato histórico doblemente anidado
+  // ({ respuestas: {...} }) que leen web y mobile. No estrechar a `unknown`.
+  respuestas: Record<string, any>;
+  fecha_completado?: string;
+  timestamp_respuesta?: string;
+}

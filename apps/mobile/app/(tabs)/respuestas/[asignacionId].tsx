@@ -3,28 +3,15 @@ import { View, StyleSheet, ScrollView } from 'react-native';
 import { ActivityIndicator, Button, Chip, Divider, Text, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { PreguntaFormulario } from '@chronic-covid19/shared-types';
+import type { MiRespuestaFormulario } from '@chronic-covid19/shared-types';
 import { apiClient } from '../../../src/lib/api';
 import { normalizarTextoVisible } from '../../../src/lib/text';
 import { formatFechaCorta } from '../../../src/lib/format';
 import { PreguntaRespuesta } from '../../../src/components/respuestas/PreguntaRespuesta';
 
-/**
- * Tipo local que refleja el objeto que devuelve `getMiRespuestaFormulario`. El
- * api-client tipa internamente `preguntas: any[]` y `respuestas: Record<string, any>`
- * (deuda de tipado existente); acá se hace un narrowing controlado en el borde
- * para no propagar `any` por los componentes.
- */
-interface RespuestaDetalle {
-  asignacion_id: number;
-  formulario_id: number;
-  formulario_titulo: string;
-  formulario_descripcion?: string;
-  preguntas: PreguntaFormulario[];
-  respuestas: Record<string, unknown>;
-  fecha_completado?: string;
-  timestamp_respuesta?: string;
-}
+// El contrato `MiRespuestaFormulario` (shared-types) ya tipa `preguntas`
+// (PreguntaFormulario[]) y `respuestas`, así que se consume directo, sin
+// narrowing manual en el borde.
 
 type EstadoCarga = 'cargando' | 'error' | 'no-encontrada' | 'no-completada' | 'listo';
 
@@ -79,7 +66,7 @@ export default function DetalleRespuesta() {
   const { asignacionId } = useLocalSearchParams<{ asignacionId: string }>();
 
   const [estadoCarga, setEstadoCarga] = useState<EstadoCarga>('cargando');
-  const [detalle, setDetalle] = useState<RespuestaDetalle | null>(null);
+  const [detalle, setDetalle] = useState<MiRespuestaFormulario | null>(null);
 
   const volver = () => router.replace('/respuestas');
 
@@ -93,12 +80,8 @@ export default function DetalleRespuesta() {
     try {
       // Una sola request: ya trae preguntas + respuestas + metadatos. No hace
       // falta buscar la asignación ni volver a pedir el formulario.
-      const raw = await apiClient.getMiRespuestaFormulario(id);
-      setDetalle({
-        ...raw,
-        preguntas: (raw.preguntas ?? []) as PreguntaFormulario[],
-        respuestas: (raw.respuestas ?? {}) as Record<string, unknown>,
-      });
+      const detalle = await apiClient.getMiRespuestaFormulario(id);
+      setDetalle(detalle);
       setEstadoCarga('listo');
     } catch (e) {
       setEstadoCarga(clasificarError(e));

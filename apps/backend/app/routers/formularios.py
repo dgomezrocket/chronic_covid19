@@ -12,7 +12,8 @@ from app.schemas.schemas import (
     FormularioCreate, FormularioUpdate, FormularioOut, FormularioListOut,
     FormularioAsignacionCreate, FormularioAsignacionOut, FormularioAsignacionDetalleOut,
     RespuestaFormularioCreate, RespuestaFormularioOut,
-    RespuestaResumenItemOut, RespuestasResumenPaginadoOut, RespuestaFormularioDetalleOut
+    RespuestaResumenItemOut, RespuestasResumenPaginadoOut, RespuestaFormularioDetalleOut,
+    MiRespuestaFormularioOut
 )
 from app.core.security import get_current_user
 
@@ -66,7 +67,7 @@ def mis_asignaciones(
 
 
 # Nuevo endpoint para que el paciente vea su respuesta
-@router.get("/mis-asignaciones/{asignacion_id}/mi-respuesta")
+@router.get("/mis-asignaciones/{asignacion_id}/mi-respuesta", response_model=MiRespuestaFormularioOut)
 def obtener_mi_respuesta(
     asignacion_id: int,
     db: Session = Depends(get_db),
