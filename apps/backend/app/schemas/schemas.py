@@ -265,6 +265,22 @@ class CambiarPasswordRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Solicitud de recuperación de contraseña (paso 1: pedir el email)."""
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Restablecimiento de contraseña (paso 2: token recibido + nueva contraseña)."""
+    token: str
+    new_password: str
+
+
+class MessageResponse(BaseModel):
+    """Respuesta genérica con un mensaje para el usuario."""
+    message: str
+
+
 # ================================================================
 # PACIENTE SCHEMAS
 # ================================================================

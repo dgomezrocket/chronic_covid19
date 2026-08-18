@@ -177,6 +177,30 @@ clearToken() {
     }
   }
 
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/auth/forgot-password',
+        { email }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async resetPassword(token: string, new_password: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/auth/reset-password',
+        { token, new_password }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   // ========== PACIENTE ENDPOINTS ==========
 
   async getPaciente(id: number): Promise<Paciente> {

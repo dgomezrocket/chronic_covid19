@@ -9,6 +9,20 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
+// ========== FORGOT / RESET PASSWORD SCHEMAS ==========
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Email inválido'),
+});
+
+export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Ingresá el código recibido por email'),
+  new_password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+});
+
+export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+
 // ========== REGISTER PACIENTE SCHEMA ==========
 export const registerPacienteSchema = z.object({
   documento: z.string().min(1, 'El documento es requerido'),

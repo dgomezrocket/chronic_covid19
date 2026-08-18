@@ -1,92 +1,77 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import { RolEnum } from '@chronic-covid19/shared-types';
 import type { Usuario } from '@chronic-covid19/shared-types';
 import { apiClient } from '../lib/api';
 
 /**
  * Store de sesión (zustand).
  *
- * Mantiene el mismo patrón/nombres que la web (`useAuthStore`,
- * `login({ user, token })`, `logout`) pero persiste el token en AsyncStorage
- * (no `persist`/localStorage) y añade `isLoading` + `restoreSession` para la
- * restauración inicial al abrir la app.
- *
- * El token del `ApiClient` vive solo en memoria, así que este store es la
- * fuente de verdad: al hacer login/restaurar hay que empujarlo con `setToken`,
- * y al cerrar sesión limpiarlo con `clearToken`.
+ * El token es un dato SENSIBLE → se persiste en SecureStore (no AsyncStorage).
+ * El token del `ApiClient` vive solo en memoria, así que este store lo empuja
+ * con `setToken` al iniciar/restaurar y lo limpia con `clearToken` al cerrar.
+ * El usuario NO se persiste: se reobtiene con `getMe` en cada arranque, lo que
+ * además valida el token contra el backend.
  */
 
-// Claves de AsyncStorage (datos NO sensibles / flags).
 const TOKEN_KEY = 'auth_token';
-const USER_KEY = 'auth_user';
-const DEMO_KEY = 'is_demo'; // TEMPORAL (sesión demo del PASO 0)
-
-interface LoginPayload {
-  user: Usuario;
-  token: string;
-  /** TEMPORAL: marca la sesión como demo (sin backend). Se quita en el login real. */
-  isDemo?: boolean;
-}
 
 interface AuthState {
   user: Usuario | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  /** Persiste una sesión ya validada (paciente) en SecureStore + ApiClient. */
+  setSession: (payload: { user: Usuario; token: string }) => Promise<void>;
+  /** Cierre de sesión definitivo: limpia ApiClient, SecureStore y estado. */
   logout: () => Promise<void>;
+  /** Al abrir la app: restaura el token, valida con getMe y verifica el rol. */
   restoreSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: null,
   isAuthenticated: false,
   isLoading: true,
 
-  login: async ({ user, token, isDemo = false }) => {
+  setSession: async ({ user, token }) => {
     apiClient.setToken(token);
-    await AsyncStorage.setItem(TOKEN_KEY, token);
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
-    // TEMPORAL: persistir el flag demo para que restoreSession no llame a getMe.
-    if (isDemo) {
-      await AsyncStorage.setItem(DEMO_KEY, '1');
-    } else {
-      await AsyncStorage.removeItem(DEMO_KEY);
-    }
-    set({ user, token, isAuthenticated: true });
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    set({ user, isAuthenticated: true });
   },
 
   logout: async () => {
     apiClient.clearToken();
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, DEMO_KEY]);
-    set({ user: null, token: null, isAuthenticated: false });
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    set({ user: null, isAuthenticated: false });
   },
 
   restoreSession: async () => {
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const token = await SecureStore.getItemAsync(TOKEN_KEY);
       if (!token) {
-        set({ user: null, token: null, isAuthenticated: false });
+        set({ user: null, isAuthenticated: false });
         return;
       }
 
       apiClient.setToken(token);
 
-      // TEMPORAL: si es una sesión demo, restaurar el usuario guardado sin
-      // llamar al backend (permite reabrir la app sin API). Se elimina este
-      // branch en el paso del login real.
-      const isDemo = await AsyncStorage.getItem(DEMO_KEY);
-      if (isDemo === '1') {
-        const raw = await AsyncStorage.getItem(USER_KEY);
-        const user = raw ? (JSON.parse(raw) as Usuario) : null;
-        set({ user, token, isAuthenticated: true });
+      // Validar el token contra el backend y verificar que sea un paciente.
+      const me = await apiClient.getMe();
+      if (!me || me.rol !== RolEnum.PACIENTE) {
+        apiClient.clearToken();
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        set({ user: null, isAuthenticated: false });
         return;
       }
 
-      // Camino real: validar el token contra el backend.
-      const me = await apiClient.getMe();
-      set({ user: me as Usuario, token, isAuthenticated: true });
+      const user: Usuario = {
+        id: me.id,
+        email: me.email,
+        nombre: me.nombre,
+        rol: RolEnum.PACIENTE,
+        debe_cambiar_password: Boolean(me.debe_cambiar_password),
+      };
+      set({ user, isAuthenticated: true });
     } catch (error) {
       // Token inválido / backend inaccesible: limpiar sesión.
       if (__DEV__) {
@@ -94,8 +79,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         console.warn('restoreSession: no se pudo restaurar la sesión', error);
       }
       apiClient.clearToken();
-      await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, DEMO_KEY]);
-      set({ user: null, token: null, isAuthenticated: false });
+      try {
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+      } catch {
+        // ignorar errores al limpiar
+      }
+      set({ user: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false });
     }
