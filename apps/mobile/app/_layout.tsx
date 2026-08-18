@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { NativeBaseProvider, Center, Spinner, Text, VStack } from 'native-base';
+import { PaperProvider, ActivityIndicator, Text } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { theme } from '../src/theme';
@@ -11,12 +12,12 @@ import { useAuthStore } from '../src/store/authStore';
  */
 function SplashLoading() {
   return (
-    <Center flex={1} bg="white">
-      <VStack space={4} alignItems="center">
-        <Spinner size="lg" color="primary.500" accessibilityLabel="Cargando" />
-        <Text color="gray.500">Cargando…</Text>
-      </VStack>
-    </Center>
+    <View style={styles.center}>
+      <ActivityIndicator size="large" color={theme.colors.primary} accessibilityLabel="Cargando" />
+      <Text variant="bodyMedium" style={styles.loadingText}>
+        Cargando…
+      </Text>
+    </View>
   );
 }
 
@@ -65,10 +66,23 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <NativeBaseProvider theme={theme}>
+      <PaperProvider theme={theme}>
         <StatusBar style="dark" />
         <RootNavigator />
-      </NativeBaseProvider>
+      </PaperProvider>
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6b7280',
+  },
+});

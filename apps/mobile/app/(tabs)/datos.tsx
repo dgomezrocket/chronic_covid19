@@ -1,4 +1,5 @@
-import { Center, VStack, Heading, Text, Button } from 'native-base';
+import { View, StyleSheet } from 'react-native';
+import { Text, Button } from 'react-native-paper';
 import { useAuthStore } from '../../src/store/authStore';
 
 export default function Datos() {
@@ -6,29 +7,53 @@ export default function Datos() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <Center flex={1} bg="white" px={6}>
-      <VStack space={6} width="100%" maxWidth="400px" alignItems="center">
-        <VStack space={1} alignItems="center">
-          <Heading size="lg" color="primary.700">
-            Datos
-          </Heading>
-          {user ? (
-            <Text color="gray.500" textAlign="center">
-              {user.nombre} · {user.email}
-            </Text>
-          ) : null}
-        </VStack>
+    <View style={styles.container}>
+      <Text variant="headlineSmall" style={styles.title}>
+        Datos
+      </Text>
+      {user ? (
+        <Text variant="bodyMedium" style={styles.subtitle}>
+          {user.nombre} · {user.email}
+        </Text>
+      ) : null}
 
-        {/* TEMPORAL (PASO 0): cierre de sesión provisional. */}
-        <Button
-          width="100%"
-          variant="outline"
-          colorScheme="danger"
-          onPress={logout}
-        >
-          Cerrar sesión
-        </Button>
-      </VStack>
-    </Center>
+      {/* TEMPORAL (PASO 0): cierre de sesión provisional. */}
+      <Button
+        mode="outlined"
+        onPress={logout}
+        style={styles.button}
+        contentStyle={styles.buttonContent}
+        textColor="#b3261e"
+      >
+        Cerrar sesión
+      </Button>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    color: '#1c5891',
+  },
+  subtitle: {
+    color: '#6b7280',
+    marginTop: 4,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  button: {
+    borderRadius: 12,
+    borderColor: '#b3261e',
+    alignSelf: 'stretch',
+  },
+  buttonContent: {
+    paddingVertical: 6,
+  },
+});

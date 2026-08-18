@@ -1,4 +1,5 @@
-import { Center, VStack, Heading, Text, Button, Box } from 'native-base';
+import { View, StyleSheet } from 'react-native';
+import { Text, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { RolEnum } from '@chronic-covid19/shared-types';
 import { useAuthStore } from '../../src/store/authStore';
@@ -23,38 +24,69 @@ export default function Login() {
   };
 
   return (
-    <Center flex={1} bg="white" px={6}>
-      <VStack space={6} width="100%" maxWidth="400px" alignItems="center">
-        <VStack space={1} alignItems="center">
-          <Heading size="xl" textAlign="center" color="primary.700">
-            Salud en Mapa
-          </Heading>
-          <Text color="gray.500" textAlign="center">
-            Iniciar sesión
-          </Text>
-        </VStack>
-
-        <Box width="100%">
-          <VStack space={3} width="100%">
-            <Button size="lg" onPress={entrarDemo}>
-              Entrar (demo)
-            </Button>
-
-            <Button
-              size="lg"
-              variant="outline"
-              onPress={() => router.push('/(auth)/register')}
-            >
-              Crear cuenta
-            </Button>
-          </VStack>
-        </Box>
-
-        <Text fontSize="xs" color="gray.400" textAlign="center">
-          Modo demo temporal — el inicio de sesión real se implementa en el
-          siguiente paso.
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text variant="headlineMedium" style={styles.title}>
+          Salud en Mapa
         </Text>
-      </VStack>
-    </Center>
+        <Text variant="bodyMedium" style={styles.subtitle}>
+          Iniciar sesión
+        </Text>
+      </View>
+
+      <View style={styles.actions}>
+        <Button mode="contained" onPress={entrarDemo} style={styles.button} contentStyle={styles.buttonContent}>
+          Entrar (demo)
+        </Button>
+        <Button
+          mode="outlined"
+          onPress={() => router.push('/(auth)/register')}
+          style={styles.button}
+          contentStyle={styles.buttonContent}
+        >
+          Crear cuenta
+        </Button>
+      </View>
+
+      <Text variant="bodySmall" style={styles.note}>
+        Modo demo temporal — el inicio de sesión real se implementa en el
+        siguiente paso.
+      </Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#ffffff',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    color: '#1c5891',
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  actions: {
+    gap: 12,
+  },
+  button: {
+    borderRadius: 12,
+  },
+  buttonContent: {
+    paddingVertical: 6,
+  },
+  note: {
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 24,
+  },
+});
