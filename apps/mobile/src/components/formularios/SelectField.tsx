@@ -4,20 +4,23 @@ import { Menu, TextInput, HelperText } from 'react-native-paper';
 import { normalizarTextoVisible } from '../../lib/text';
 
 interface Props {
-  label: string;
   /** Valor ORIGINAL seleccionado (tal como viene en `options`). */
   value?: string;
   options: string[];
   onChange: (option: string) => void;
   error?: string;
+  /** Texto de la pregunta, para lectores de pantalla (la etiqueta visible la
+   * muestra `PreguntaField` encima del control). */
+  accessibilityLabel?: string;
 }
 
 /**
  * Selección de una opción usando el `Menu` de react-native-paper anclado en un
- * `TextInput` no editable. Muestra las opciones normalizadas para lectura, pero
- * emite y conserva el VALOR ORIGINAL de la opción.
+ * `TextInput` no editable (sin label flotante, para no truncar preguntas
+ * largas). Muestra las opciones normalizadas para lectura, pero emite y conserva
+ * el VALOR ORIGINAL de la opción.
  */
-export function SelectField({ label, value, options, onChange, error }: Props) {
+export function SelectField({ value, options, onChange, error, accessibilityLabel }: Props) {
   const [abierto, setAbierto] = useState(false);
 
   const abrir = () => setAbierto(true);
@@ -36,7 +39,6 @@ export function SelectField({ label, value, options, onChange, error }: Props) {
         anchor={
           <TextInput
             mode="outlined"
-            label={label}
             value={value ? normalizarTextoVisible(value) : ''}
             placeholder="Seleccionar una opción"
             editable={false}
@@ -44,6 +46,7 @@ export function SelectField({ label, value, options, onChange, error }: Props) {
             onPressIn={abrir}
             right={<TextInput.Icon icon="menu-down" onPress={abrir} />}
             error={!!error}
+            accessibilityLabel={accessibilityLabel}
           />
         }
       >

@@ -5,10 +5,12 @@ import type { DateTimePickerEvent } from '@react-native-community/datetimepicker
 import { TextInput, HelperText } from 'react-native-paper';
 
 interface Props {
-  label: string;
   value?: string; // YYYY-MM-DD
   onChange: (value: string) => void;
   error?: string;
+  /** Texto de la pregunta, para lectores de pantalla (la etiqueta visible la
+   * muestra `PreguntaField` encima del control). */
+  accessibilityLabel?: string;
 }
 
 function aISO(date: Date): string {
@@ -29,9 +31,10 @@ function parsear(value?: string): Date {
 /**
  * Selector de fecha para preguntas de formulario. A diferencia de `DateField`
  * (pensado para fecha de nacimiento), NO restringe `maximumDate`, por lo que
- * admite fechas futuras. Guarda un string `YYYY-MM-DD`.
+ * admite fechas futuras. No usa label flotante (para no truncar preguntas
+ * largas). Guarda un string `YYYY-MM-DD`.
  */
-export function FormDateField({ label, value, onChange, error }: Props) {
+export function FormDateField({ value, onChange, error, accessibilityLabel }: Props) {
   const [mostrar, setMostrar] = useState(false);
 
   const alElegir = (event: DateTimePickerEvent, selected?: Date) => {
@@ -45,7 +48,6 @@ export function FormDateField({ label, value, onChange, error }: Props) {
     <View style={styles.container}>
       <TextInput
         mode="outlined"
-        label={label}
         value={value ?? ''}
         placeholder="AAAA-MM-DD"
         editable={false}
@@ -53,6 +55,7 @@ export function FormDateField({ label, value, onChange, error }: Props) {
         onPressIn={() => setMostrar(true)}
         right={<TextInput.Icon icon="calendar" onPress={() => setMostrar(true)} />}
         error={!!error}
+        accessibilityLabel={accessibilityLabel}
       />
       {error ? (
         <HelperText type="error" visible>

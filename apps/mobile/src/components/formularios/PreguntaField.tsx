@@ -16,25 +16,48 @@ interface Props {
 export function PreguntaField({ pregunta, valor, error, onChange }: Props) {
   const theme = useTheme();
   const tipo = normalizarTipoPregunta(pregunta.type);
-  const label = normalizarTextoVisible(pregunta.label) + (pregunta.required ? ' *' : '');
+  const etiqueta = normalizarTextoVisible(pregunta.label);
+  const accesible = etiqueta + (pregunta.required ? ' (obligatorio)' : '');
   const placeholder = pregunta.placeholder
     ? normalizarTextoVisible(pregunta.placeholder)
     : undefined;
 
+  // Enunciado completo de la pregunta: se muestra como texto que envuelve en
+  // varias líneas (NO como label flotante del input, que se trunca).
+  const Enunciado = (
+    <Text variant="titleSmall" style={styles.enunciado}>
+      {etiqueta}
+      {pregunta.required ? <Text style={{ color: theme.colors.error }}> *</Text> : null}
+    </Text>
+  );
+
   if (tipo === 'select') {
     return (
-      <SelectField
-        label={label}
-        value={valor}
-        options={pregunta.options ?? []}
-        onChange={onChange}
-        error={error}
-      />
+      <View style={styles.container}>
+        {Enunciado}
+        <SelectField
+          value={valor}
+          options={pregunta.options ?? []}
+          onChange={onChange}
+          error={error}
+          accessibilityLabel={accesible}
+        />
+      </View>
     );
   }
 
   if (tipo === 'date') {
-    return <FormDateField label={label} value={valor} onChange={onChange} error={error} />;
+    return (
+      <View style={styles.container}>
+        {Enunciado}
+        <FormDateField
+          value={valor}
+          onChange={onChange}
+          error={error}
+          accessibilityLabel={accesible}
+        />
+      </View>
+    );
   }
 
   if (tipo === 'number') {
@@ -50,14 +73,15 @@ export function PreguntaField({ pregunta, valor, error, onChange }: Props) {
             : '';
     return (
       <View style={styles.container}>
+        {Enunciado}
         <TextInput
           mode="outlined"
-          label={label}
           value={valor ?? ''}
-          placeholder={placeholder}
+          placeholder={placeholder ?? 'Ingresá un número'}
           onChangeText={onChange}
           keyboardType="numeric"
           error={!!error}
+          accessibilityLabel={accesible}
         />
         {error ? (
           <HelperText type="error" visible>
@@ -75,14 +99,15 @@ export function PreguntaField({ pregunta, valor, error, onChange }: Props) {
   // text (y cualquier tipo desconocido normalizado a 'text')
   return (
     <View style={styles.container}>
+      {Enunciado}
       <TextInput
         mode="outlined"
-        label={label}
         value={valor ?? ''}
-        placeholder={placeholder}
+        placeholder={placeholder ?? 'Escribí tu respuesta'}
         onChangeText={onChange}
         multiline
         error={!!error}
+        accessibilityLabel={accesible}
       />
       {error ? (
         <HelperText type="error" visible>
@@ -94,5 +119,6 @@ export function PreguntaField({ pregunta, valor, error, onChange }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 2 },
+  container: { gap: 6 },
+  enunciado: { lineHeight: 20 },
 });
