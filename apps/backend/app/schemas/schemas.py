@@ -123,6 +123,7 @@ class PacienteCreate(PacienteBase):
 
 
 class PacienteUpdate(BaseModel):
+    documento: Optional[str] = None
     nombre: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     genero: Optional[GeneroEnum] = None
@@ -302,6 +303,7 @@ class PacienteCreate(PacienteBase):
 
 
 class PacienteUpdate(BaseModel):
+    documento: Optional[str] = None
     nombre: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     genero: Optional[GeneroEnum] = None

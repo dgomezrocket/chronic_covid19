@@ -56,6 +56,7 @@ export type RegisterMedicoFormData = z.infer<typeof registerMedicoSchema>;
 
 // ========== UPDATE PACIENTE SCHEMA ==========
 export const updatePacienteSchema = z.object({
+  documento: z.string().min(1, 'El documento es requerido').optional(),
   nombre: z.string().min(1, 'El nombre es requerido').optional(),
   fecha_nacimiento: z.string().optional(),
   genero: z.nativeEnum(GeneroEnum, {

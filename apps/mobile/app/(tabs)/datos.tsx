@@ -40,6 +40,7 @@ export default function Datos() {
   const [editando, setEditando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [coords, setCoords] = useState<Coordenadas | null>(null);
+  const [direccionUbicacion, setDireccionUbicacion] = useState('');
   const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
@@ -54,12 +55,13 @@ export default function Datos() {
 
   const seedForm = useCallback(
     (p: Paciente) => {
+      // La dirección se maneja en la tarjeta de ubicación, no en este form.
       reset({
+        documento: p.documento ?? '',
         nombre: p.nombre ?? '',
         fecha_nacimiento: p.fecha_nacimiento ?? '',
         genero: p.genero,
         telefono: p.telefono ?? '',
-        direccion: p.direccion ?? '',
         email: p.email ?? '',
       });
     },
@@ -78,6 +80,7 @@ export default function Datos() {
           ? { latitud: p.latitud, longitud: p.longitud }
           : null,
       );
+      setDireccionUbicacion(p.direccion ?? '');
       setEstado('listo');
     } catch (e) {
       if (__DEV__) {
@@ -97,11 +100,11 @@ export default function Datos() {
     setGuardando(true);
     try {
       const payload: Partial<Paciente> = {
+        documento: data.documento?.trim() || undefined,
         nombre: data.nombre?.trim() || undefined,
         fecha_nacimiento: data.fecha_nacimiento || undefined,
         genero: data.genero,
         telefono: data.telefono?.trim() || undefined,
-        direccion: data.direccion?.trim() || undefined,
         email: data.email?.trim() || undefined,
       };
       const actualizado = await apiClient.updatePaciente(user.id, payload);
@@ -117,14 +120,19 @@ export default function Datos() {
   };
 
   const onGuardarUbicacion = async () => {
-    if (!user?.id || !coords) return;
+    if (!user?.id) return;
     setGuardandoUbicacion(true);
     try {
-      const actualizado = await apiClient.updatePaciente(user.id, {
-        latitud: coords.latitud,
-        longitud: coords.longitud,
-      });
+      const payload: Partial<Paciente> = {
+        direccion: direccionUbicacion.trim() || undefined,
+      };
+      if (coords) {
+        payload.latitud = coords.latitud;
+        payload.longitud = coords.longitud;
+      }
+      const actualizado = await apiClient.updatePaciente(user.id, payload);
       setPaciente(actualizado);
+      setDireccionUbicacion(actualizado.direccion ?? '');
       setSnackbar('Ubicación actualizada correctamente.');
     } catch (e) {
       setSnackbar(mensajeDeError(e, 'No pudimos guardar la ubicación.'));
@@ -171,6 +179,8 @@ export default function Datos() {
     ['Dirección', paciente.direccion || '—'],
   ];
 
+  const puedeGuardarUbicacion = !!coords || direccionUbicacion.trim().length > 0;
+
   return (
     <ScrollView
       contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 32 }]}
@@ -209,6 +219,17 @@ export default function Datos() {
 
             <Controller
               control={control}
+              name="documento"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <View style={styles.field}>
+                  <TextInput mode="outlined" label="Cédula / Documento" value={value ?? ''} onChangeText={onChange} onBlur={onBlur} autoCapitalize="none" error={!!errors.documento} />
+                  {errors.documento ? <HelperText type="error" visible>{errors.documento.message}</HelperText> : null}
+                </View>
+              )}
+            />
+
+            <Controller
+              control={control}
               name="nombre"
               render={({ field: { onChange, onBlur, value } }) => (
                 <View style={styles.field}>
@@ -241,17 +262,6 @@ export default function Datos() {
                 <View style={styles.field}>
                   <TextInput mode="outlined" label="Teléfono" value={value ?? ''} onChangeText={onChange} onBlur={onBlur} keyboardType="phone-pad" error={!!errors.telefono} />
                   {errors.telefono ? <HelperText type="error" visible>{errors.telefono.message}</HelperText> : null}
-                </View>
-              )}
-            />
-
-            <Controller
-              control={control}
-              name="direccion"
-              render={({ field: { onChange, onBlur, value } }) => (
-                <View style={styles.field}>
-                  <TextInput mode="outlined" label="Dirección" value={value ?? ''} onChangeText={onChange} onBlur={onBlur} error={!!errors.direccion} />
-                  {errors.direccion ? <HelperText type="error" visible>{errors.direccion.message}</HelperText> : null}
                 </View>
               )}
             />
@@ -300,13 +310,28 @@ export default function Datos() {
           <LocationField
             value={coords}
             onChange={setCoords}
-            descripcion="Actualizá tu domicilio con el GPS o tocando el mapa. Luego guardá los cambios."
+            descripcion="Actualizá tu domicilio con el GPS o eligiendo el punto en el mapa. La dirección se completa sola y podés ajustarla."
+            onAddressResolved={setDireccionUbicacion}
           />
+
+          <View style={styles.field}>
+            <TextInput
+              mode="outlined"
+              label="Dirección"
+              value={direccionUbicacion}
+              onChangeText={setDireccionUbicacion}
+              multiline
+            />
+            <HelperText type="info" visible>
+              Se completa automáticamente según el punto del mapa. Podés editarla.
+            </HelperText>
+          </View>
+
           <Button
             mode="contained"
             onPress={onGuardarUbicacion}
             loading={guardandoUbicacion}
-            disabled={guardandoUbicacion || !coords}
+            disabled={guardandoUbicacion || !puedeGuardarUbicacion}
             style={styles.button}
             contentStyle={styles.buttonContent}
           >

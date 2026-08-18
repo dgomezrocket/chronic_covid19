@@ -69,6 +69,7 @@ export default function Register() {
   const {
     control,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<RegisterPacienteFormData>({
     resolver: zodResolver(registerPacienteSchema),
@@ -164,7 +165,8 @@ export default function Register() {
         <LocationField
           value={coords}
           onChange={setCoords}
-          descripcion="Opcional. Usamos tu ubicación para asignarte hospitales cercanos. Podés usar el GPS o tocar el mapa."
+          descripcion="Opcional. Usamos tu ubicación para asignarte hospitales cercanos."
+          onAddressResolved={(dir) => setValue('direccion', dir)}
         />
 
         {errorGeneral ? (
