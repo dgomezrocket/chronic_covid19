@@ -59,6 +59,8 @@ export default function TabsLayout() {
         name="mensajes"
         options={{
           title: 'Mensajes',
+          // El Stack anidado (mensajes/_layout) provee sus propios headers.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" color={color} size={size} />,
         }}
       />

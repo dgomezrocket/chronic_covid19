@@ -46,6 +46,9 @@ import {
   ResumenRespuestasResponse,
   RespuestaFormularioDetalle,
   MiRespuestaFormulario,
+  MensajeChat,
+  ConversacionMensaje,
+  WebSocketTokenResponse,
 } from '@chronic-covid19/shared-types';
 
 export class ApiClient {
@@ -1239,9 +1242,9 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   /**
    * Obtiene todas las conversaciones del usuario actual
    */
-  async getMisConversaciones(): Promise<any[]> {
+  async getMisConversaciones(): Promise<ConversacionMensaje[]> {
     try {
-      const response = await this.client.get('/mensajes/conversaciones');
+      const response = await this.client.get<ConversacionMensaje[]>('/mensajes/conversaciones');
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1251,9 +1254,9 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   /**
    * Obtiene los mensajes de un chat específico
    */
-  async getChatMessages(pacienteId: number, medicoId: number, skip: number = 0, limit: number = 50): Promise<any[]> {
+  async getChatMessages(pacienteId: number, medicoId: number, skip: number = 0, limit: number = 50): Promise<MensajeChat[]> {
     try {
-      const response = await this.client.get(`/mensajes/chat/${pacienteId}/${medicoId}?skip=${skip}&limit=${limit}`);
+      const response = await this.client.get<MensajeChat[]>(`/mensajes/chat/${pacienteId}/${medicoId}?skip=${skip}&limit=${limit}`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1261,11 +1264,13 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   }
 
   /**
-   * Envía un mensaje (alternativa REST al WebSocket)
+   * Envía un mensaje (alternativa REST al WebSocket).
+   * `remitente_rol` está DEPRECADO: el backend deriva el rol del remitente del
+   * usuario autenticado y lo ignora. Se mantiene opcional por compatibilidad.
    */
-  async enviarMensaje(data: { contenido: string; paciente_id: number; medico_id: number; remitente_rol: string }): Promise<any> {
+  async enviarMensaje(data: { contenido: string; paciente_id: number; medico_id: number; remitente_rol?: string }): Promise<MensajeChat> {
     try {
-      const response = await this.client.post('/mensajes/enviar', data);
+      const response = await this.client.post<MensajeChat>('/mensajes/enviar', data);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1297,12 +1302,31 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
 
 
   /**
-   * Obtiene la URL del WebSocket para chat (sin token en query string)
+   * Solicita un ticket JWT de corta duración para autenticar el WebSocket de una
+   * conversación concreta. Requiere estar autenticado (Bearer token). El backend
+   * valida el acceso (identidad + rol + asignación activa) antes de emitirlo.
    */
-  getWebSocketUrl(pacienteId: number, medicoId: number): string {
+  async getWebSocketToken(pacienteId: number, medicoId: number): Promise<WebSocketTokenResponse> {
+    try {
+      const response = await this.client.post<WebSocketTokenResponse>('/mensajes/ws-token', {
+        paciente_id: pacienteId,
+        medico_id: medicoId,
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Construye la URL del WebSocket para chat. Si se pasa un `token` (ticket WS de
+   * `getWebSocketToken`), se anexa como query param para autenticar la conexión.
+   */
+  getWebSocketUrl(pacienteId: number, medicoId: number, token?: string): string {
     const baseUrl = this.client.defaults.baseURL || 'http://localhost:8000';
-    const wsUrl = baseUrl.replace('http', 'ws');
-    return `${wsUrl}/mensajes/ws/${pacienteId}/${medicoId}`;
+    const wsUrl = baseUrl.replace(/^http/, 'ws');
+    const base = `${wsUrl}/mensajes/ws/${pacienteId}/${medicoId}`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
   }
 
 

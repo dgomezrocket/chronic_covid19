@@ -142,6 +142,37 @@ export interface Mensaje {
   leido: number;
 }
 
+// Mensaje tal como lo devuelven el chat REST y el broadcast del WebSocket
+// (incluye el rol y nombre del remitente, derivados por el backend).
+export interface MensajeChat {
+  id: number;
+  contenido: string;
+  paciente_id: number;
+  medico_id: number;
+  timestamp: string;
+  leido: number;
+  remitente_rol: string;   // "paciente" | "medico"
+  remitente_nombre: string;
+}
+
+// Resumen de una conversación (GET /mensajes/conversaciones)
+export interface ConversacionMensaje {
+  paciente_id: number;
+  paciente_nombre: string;
+  medico_id: number;
+  medico_nombre: string;
+  ultimo_mensaje: string;
+  ultimo_timestamp: string;
+  no_leidos: number;
+}
+
+// Ticket JWT de corta duración para autenticar el WebSocket del chat
+// (POST /mensajes/ws-token).
+export interface WebSocketTokenResponse {
+  token: string;
+  expires_in: number;
+}
+
 // ========== ASIGNACION ==========
 export interface Asignacion {
   id: number;

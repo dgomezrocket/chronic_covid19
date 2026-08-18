@@ -26,3 +26,33 @@ export function formatFechaCorta(iso?: string | null): string {
   const [, y, mm, dd] = m;
   return `${dd}/${mm}/${y}`;
 }
+
+/**
+ * Formatea el timestamp de un mensaje para el chat, en hora local (es-PY).
+ *
+ * El backend guarda los timestamps con `datetime.utcnow()`: son naive y en UTC
+ * (sin zona). Si el ISO no trae zona explícita, le añadimos `Z` para que `Date`
+ * lo interprete como UTC y NO como hora local (evita mostrar una hora corrida).
+ *
+ * - Mismo día → solo la hora, p. ej. `"14:05"`.
+ * - Otro día  → fecha corta + hora, p. ej. `"5 ago 14:05"`.
+ * - Inválido / vacío → cadena vacía.
+ */
+export function formatHoraMensaje(iso?: string | null): string {
+  if (!iso) return '';
+  const conZona = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+  const d = new Date(conZona);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const ahora = new Date();
+  const mismoDia = d.toDateString() === ahora.toDateString();
+  if (mismoDia) {
+    return d.toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleDateString('es-PY', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}

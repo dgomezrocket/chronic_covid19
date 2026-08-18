@@ -4,13 +4,19 @@ from sqlalchemy import and_, or_, func
 from app.db.db import get_db
 from app.models.models import Mensaje, Paciente, Medico, Asignacion, RolEnum
 from app.schemas.schemas import MensajeOut
-from app.core.security import get_current_user  # ← Cambio aquí: de auth a security
-from typing import List, Dict
-from datetime import datetime
+from app.core.security import get_current_user, create_access_token, decode_token
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 import json
 
 router = APIRouter()
+
+# Alcance (scope) y vida del ticket JWT de corta duración usado para autenticar
+# la conexión WebSocket. El ticket NO reemplaza al access token normal; sólo
+# autoriza una conversación concreta (paciente_id + medico_id) por unos segundos.
+WS_TICKET_SCOPE = "websocket_chat"
+WS_TICKET_EXPIRE_SECONDS = 60
 
 # ========== SCHEMAS ADICIONALES ==========
 
@@ -18,7 +24,20 @@ class MensajeCreateRequest(BaseModel):
     contenido: str
     paciente_id: int
     medico_id: int
-    remitente_rol: str  # "paciente" o "medico"
+    # DEPRECADO: el backend ignora este campo y deriva el rol del remitente del
+    # usuario autenticado. Se mantiene opcional sólo por compatibilidad con clientes
+    # antiguos; no confiar nunca en él para decidir quién envió el mensaje.
+    remitente_rol: Optional[str] = None
+
+
+class WsTokenRequest(BaseModel):
+    paciente_id: int
+    medico_id: int
+
+
+class WsTokenResponse(BaseModel):
+    token: str
+    expires_in: int
 
 class ConversacionOut(BaseModel):
     paciente_id: int
@@ -78,6 +97,46 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# ========== AUTORIZACIÓN DE ACCESO AL CHAT ==========
+
+def existe_asignacion_activa(db: Session, paciente_id: int, medico_id: int) -> bool:
+    """True si hay una asignación activa entre ese paciente y ese médico."""
+    return db.query(Asignacion).filter(
+        Asignacion.paciente_id == paciente_id,
+        Asignacion.medico_id == medico_id,
+        Asignacion.activo == True,
+    ).first() is not None
+
+
+def verificar_acceso_chat(current_user: dict, paciente_id: int, medico_id: int, db: Session) -> str:
+    """
+    Valida que ``current_user`` pueda acceder a la conversación (paciente_id, medico_id).
+
+    Comprueba, en orden:
+      1. Rol permitido (sólo ``paciente`` o ``medico`` pueden chatear).
+      2. Identidad: un paciente sólo accede a su propio ``paciente_id``; un médico,
+         a su propio ``medico_id``. Así nadie puede abrir una combinación arbitraria
+         de IDs conociéndolos.
+      3. Relación válida: debe existir una ``Asignacion`` activa entre ambos.
+
+    Devuelve el rol del usuario ("paciente"/"medico"). Lanza HTTP 403 si algo falla.
+    """
+    rol = current_user.get("rol")
+
+    if rol == "paciente":
+        if current_user["id"] != paciente_id:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
+    elif rol == "medico":
+        if current_user["id"] != medico_id:
+            raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
+    else:
+        raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
+
+    if not existe_asignacion_activa(db, paciente_id, medico_id):
+        raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
+
+    return rol
+
 # ========== ENDPOINTS REST ==========
 
 @router.get("/conversaciones", response_model=List[ConversacionOut])
@@ -111,10 +170,12 @@ def get_mis_conversaciones(
                 Mensaje.medico_id == current_user["id"]  # ← Cambio
             ).order_by(Mensaje.timestamp.desc()).first()
             
+            # Sólo cuentan como "no leídos" los mensajes que envió el paciente.
             no_leidos = db.query(func.count(Mensaje.id)).filter(
                 Mensaje.paciente_id == paciente_id,
                 Mensaje.medico_id == current_user["id"],  # ← Cambio
                 Mensaje.leido == 0,
+                Mensaje.remitente_rol == RolEnum.paciente,
             ).scalar()
             
             conversaciones.append(ConversacionOut(
@@ -148,7 +209,13 @@ def get_mis_conversaciones(
                         no_leidos=0
                     ))
         
-        return sorted(conversaciones, key=lambda x: x.ultimo_timestamp, reverse=True)
+        # Normalizar a naive para evitar TypeError al comparar timestamps de mensajes
+        # (naive, datetime.utcnow) con fecha_asignacion (tz-aware).
+        def _clave_orden(c: ConversacionOut):
+            ts = c.ultimo_timestamp
+            return ts.replace(tzinfo=None) if ts.tzinfo is not None else ts
+
+        return sorted(conversaciones, key=_clave_orden, reverse=True)
     
     elif current_user["rol"] == "paciente":  # ← Cambio
         # Para pacientes: obtener conversación con su médico asignado
@@ -169,10 +236,12 @@ def get_mis_conversaciones(
             Mensaje.medico_id == medico.id
         ).order_by(Mensaje.timestamp.desc()).first()
         
+        # Sólo cuentan como "no leídos" los mensajes que envió el médico.
         no_leidos = db.query(func.count(Mensaje.id)).filter(
             Mensaje.paciente_id == current_user["id"],  # ← Cambio
             Mensaje.medico_id == medico.id,
-            Mensaje.leido == 0
+            Mensaje.leido == 0,
+            Mensaje.remitente_rol == RolEnum.medico,
         ).scalar()
         
         return [ConversacionOut(
@@ -197,13 +266,10 @@ def get_chat_messages(
     db: Session = Depends(get_db)
 ):
     """Obtiene los mensajes de un chat específico"""
-    
-    # Verificar que el usuario tiene acceso a este chat
-    if current_user["rol"] == "paciente" and current_user["id"] != paciente_id:  # ← Cambio
-        raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
-    elif current_user["rol"] == "medico" and current_user["id"] != medico_id:  # ← Cambio
-        raise HTTPException(status_code=403, detail="No tienes acceso a este chat")
-    
+
+    # Identidad + rol + asignación activa entre paciente y médico.
+    verificar_acceso_chat(current_user, paciente_id, medico_id, db)
+
     mensajes = db.query(Mensaje).filter(
         Mensaje.paciente_id == paciente_id,
         Mensaje.medico_id == medico_id
@@ -238,16 +304,16 @@ def enviar_mensaje(
     db: Session = Depends(get_db)
 ):
     """Envía un mensaje nuevo (endpoint REST alternativo al WebSocket)"""
-    
-    # Verificar permisos
-    if current_user["rol"] == "paciente" and current_user["id"] != mensaje_data.paciente_id:  # ← Cambio
-        raise HTTPException(status_code=403, detail="No puedes enviar mensajes como otro paciente")
-    elif current_user["rol"] == "medico" and current_user["id"] != mensaje_data.medico_id:
-        raise HTTPException(status_code=403, detail="No puedes enviar mensajes como otro médico")
-    
-    # Convertir el string a RolEnum
-    remitente_rol_enum = RolEnum.medico if mensaje_data.remitente_rol == "medico" else RolEnum.paciente
-    
+
+    # Identidad + rol + asignación activa. Devuelve el rol REAL del remitente.
+    rol = verificar_acceso_chat(
+        current_user, mensaje_data.paciente_id, mensaje_data.medico_id, db
+    )
+
+    # El rol del remitente se deriva del usuario autenticado; se ignora
+    # mensaje_data.remitente_rol (deprecado) para impedir suplantaciones.
+    remitente_rol_enum = RolEnum.medico if rol == "medico" else RolEnum.paciente
+
     nuevo_mensaje = Mensaje(
         contenido=mensaje_data.contenido,
         paciente_id=mensaje_data.paciente_id,
@@ -256,16 +322,20 @@ def enviar_mensaje(
         leido=0,
         remitente_rol=remitente_rol_enum
     )
-    
+
     db.add(nuevo_mensaje)
     db.commit()
     db.refresh(nuevo_mensaje)
-    
+
     return {
         "id": nuevo_mensaje.id,
         "contenido": nuevo_mensaje.contenido,
+        "paciente_id": nuevo_mensaje.paciente_id,
+        "medico_id": nuevo_mensaje.medico_id,
         "timestamp": nuevo_mensaje.timestamp.isoformat(),
-        "remitente_rol": mensaje_data.remitente_rol
+        "leido": nuevo_mensaje.leido,
+        "remitente_rol": remitente_rol_enum.value,
+        "remitente_nombre": current_user.get("nombre", ""),
     }
 
 @router.put("/marcar-leidos/{paciente_id}/{medico_id}")
@@ -276,7 +346,10 @@ def marcar_mensajes_leidos(
     db: Session = Depends(get_db)
 ):
     """Marca todos los mensajes de un chat como leídos (solo los del remitente contrario)"""
-    
+
+    # Identidad + rol + asignación activa entre paciente y médico.
+    verificar_acceso_chat(current_user, paciente_id, medico_id, db)
+
     # Determinar qué mensajes marcar como leídos (los del otro usuario)
     if current_user["rol"] == "medico":
         # El médico marca como leídos los mensajes del paciente
@@ -333,30 +406,83 @@ def get_mensajes_no_leidos_count(
     
     return {"count": count or 0}
 
+
+@router.post("/ws-token", response_model=WsTokenResponse)
+def crear_ws_token(
+    body: WsTokenRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Emite un ticket JWT de corta duración para autenticar la conexión WebSocket
+    a una conversación concreta. Requiere Bearer token normal y valida el acceso
+    (identidad + rol + asignación activa) antes de entregarlo.
+    """
+    rol = verificar_acceso_chat(current_user, body.paciente_id, body.medico_id, db)
+
+    token = create_access_token(
+        {
+            "sub": str(current_user["id"]),
+            "rol": rol,
+            "paciente_id": body.paciente_id,
+            "medico_id": body.medico_id,
+            "scope": WS_TICKET_SCOPE,
+        },
+        expires_delta=timedelta(seconds=WS_TICKET_EXPIRE_SECONDS),
+    )
+    return WsTokenResponse(token=token, expires_in=WS_TICKET_EXPIRE_SECONDS)
+
+
+# ========== WEBSOCKET PARA CHAT EN TIEMPO REAL ==========
+
 @router.websocket("/ws/{paciente_id}/{medico_id}")
 async def chat_websocket(
-    websocket: WebSocket, 
-    paciente_id: int, 
-    medico_id: int
+    websocket: WebSocket,
+    paciente_id: int,
+    medico_id: int,
+    token: Optional[str] = Query(default=None),
 ):
-    """WebSocket para chat en tiempo real"""
+    """
+    WebSocket para chat en tiempo real. Exige un ticket JWT (query param ``token``)
+    emitido por ``POST /mensajes/ws-token``. Se valida ANTES de aceptar la conexión:
+    firma, expiración, ``scope`` y que el ticket corresponda exactamente a este par
+    (paciente_id, medico_id). El rol del remitente se deriva del ticket, nunca del
+    payload del cliente.
+    """
+    # 1008 = Policy Violation. Cerrar sin aceptar rechaza el handshake.
+    payload = decode_token(token) if token else None
+    if (
+        payload is None
+        or payload.get("scope") != WS_TICKET_SCOPE
+        or payload.get("paciente_id") != paciente_id
+        or payload.get("medico_id") != medico_id
+        or payload.get("rol") not in ("paciente", "medico")
+    ):
+        await websocket.close(code=1008)
+        return
+
+    # El rol del remitente queda fijado por el ticket para toda la conexión.
+    remitente_rol = payload["rol"]
+    remitente_rol_enum = RolEnum.medico if remitente_rol == "medico" else RolEnum.paciente
+
     await manager.connect(websocket, paciente_id, medico_id)
-    
+
     try:
         while True:
             data = await websocket.receive_text()
             msg_data = json.loads(data)
-            
+
+            # Sólo se acepta 'contenido' del cliente; ids y rol vienen de la conexión.
+            contenido = str(msg_data.get("contenido", "")).strip()
+            if not contenido:
+                continue
+
             # Guardar mensaje en la BD
             from app.db.db import SessionLocal
             db = SessionLocal()
             try:
-                # Convertir el string a RolEnum
-                remitente_rol = msg_data.get("remitente_rol", "paciente")
-                remitente_rol_enum = RolEnum.medico if remitente_rol == "medico" else RolEnum.paciente
-                
                 mensaje = Mensaje(
-                    contenido=msg_data.get("contenido", ""),
+                    contenido=contenido,
                     paciente_id=paciente_id,
                     medico_id=medico_id,
                     timestamp=datetime.utcnow(),
@@ -366,11 +492,11 @@ async def chat_websocket(
                 db.add(mensaje)
                 db.commit()
                 db.refresh(mensaje)
-                
+
                 # Obtener nombres para el broadcast
                 paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
                 medico = db.query(Medico).filter(Medico.id == medico_id).first()
-                
+
                 response = {
                     "id": mensaje.id,
                     "contenido": mensaje.contenido,
@@ -380,13 +506,13 @@ async def chat_websocket(
                     "paciente_id": paciente_id,
                     "medico_id": medico_id
                 }
-                
+
                 # Broadcast a todos en el chat
                 await manager.broadcast_to_chat(paciente_id, medico_id, response)
-                
+
             finally:
                 db.close()
-                
+
     except WebSocketDisconnect:
         manager.disconnect(websocket, paciente_id, medico_id)
 

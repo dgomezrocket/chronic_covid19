@@ -43,6 +43,10 @@ export default function Chat({ onClose, conversacionInicial }: ChatProps) {
   const wsRef = useRef<WebSocket | null>(null);
   const mensajesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Control de ciclo de vida / reconexión del WebSocket
+  const wsActivoRef = useRef(false);
+  const intentosRef = useRef(0);
+  const MAX_INTENTOS_WS = 3;
 
   // Scroll al último mensaje
   const scrollToBottom = useCallback(() => {
@@ -60,12 +64,18 @@ export default function Chat({ onClose, conversacionInicial }: ChatProps) {
   // Cargar mensajes cuando cambia la conversación activa
   useEffect(() => {
     if (conversacionActiva && token) {
+      wsActivoRef.current = true;
+      intentosRef.current = 0;
       loadMensajes();
       connectWebSocket();
     }
     return () => {
+      // Marcar como inactivo para que no se reconecte tras cerrar/cambiar de chat.
+      wsActivoRef.current = false;
       if (wsRef.current) {
+        wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, [conversacionActiva, token]);
@@ -114,42 +124,58 @@ export default function Chat({ onClose, conversacionInicial }: ChatProps) {
     }
   };
 
-  const connectWebSocket = () => {
+  const connectWebSocket = async () => {
     if (!conversacionActiva || !token) return;
+
+    const { paciente_id, medico_id } = conversacionActiva;
 
     // Cerrar conexión anterior si existe
     if (wsRef.current) {
+      wsRef.current.onclose = null;
       wsRef.current.close();
+      wsRef.current = null;
     }
 
-    const wsUrl = apiClient.getWebSocketUrl(
-      conversacionActiva.paciente_id,
-      conversacionActiva.medico_id
-    );
+    try {
+      // Ticket JWT de corta duración; sin él el backend rechaza la conexión.
+      const { token: wsTicket } = await apiClient.getWebSocketToken(paciente_id, medico_id);
 
-    const ws = new WebSocket(wsUrl);
+      // El chat pudo cerrarse mientras pedíamos el ticket.
+      if (!wsActivoRef.current) return;
 
-    ws.onopen = () => {
-      console.log('🔌 WebSocket conectado');
-      setWsConnected(true);
-    };
+      const wsUrl = apiClient.getWebSocketUrl(paciente_id, medico_id, wsTicket);
+      const ws = new WebSocket(wsUrl);
 
-    ws.onmessage = (event) => {
-      const mensaje = JSON.parse(event.data);
-      setMensajes(prev => [...prev, mensaje]);
-    };
+      ws.onopen = () => {
+        intentosRef.current = 0;
+        setWsConnected(true);
+      };
 
-    ws.onclose = () => {
-      console.log('🔌 WebSocket desconectado');
+      ws.onmessage = (event) => {
+        const mensaje = JSON.parse(event.data);
+        // Deduplicar por id para evitar mensajes repetidos.
+        setMensajes(prev => (prev.some(m => m.id === mensaje.id) ? prev : [...prev, mensaje]));
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+        // Reconexión sencilla con pocos intentos (sólo si el chat sigue activo).
+        if (wsActivoRef.current && intentosRef.current < MAX_INTENTOS_WS) {
+          intentosRef.current += 1;
+          setTimeout(() => connectWebSocket(), 1000 * intentosRef.current);
+        }
+      };
+
+      ws.onerror = () => {
+        setWsConnected(false);
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      // Sin WebSocket seguimos con el fallback REST al enviar.
+      console.error('No se pudo abrir el WebSocket:', error);
       setWsConnected(false);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setWsConnected(false);
-    };
-
-    wsRef.current = ws;
+    }
   };
 
   const handleEnviarMensaje = async (e: React.FormEvent) => {
@@ -159,24 +185,23 @@ export default function Chat({ onClose, conversacionInicial }: ChatProps) {
 
     setEnviando(true);
 
-    const mensajeData = {
-      contenido: nuevoMensaje.trim(),
-      paciente_id: conversacionActiva.paciente_id,
-      medico_id: conversacionActiva.medico_id,
-      remitente_rol: user.rol
-    };
+    const contenido = nuevoMensaje.trim();
 
     try {
-      // Intentar enviar por WebSocket primero
+      // Intentar enviar por WebSocket primero. El frame sólo lleva 'contenido';
+      // el backend deriva el rol del remitente del ticket autenticado.
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify(mensajeData));
+        wsRef.current.send(JSON.stringify({ contenido }));
       } else {
-        // Fallback a REST
-        const response = await apiClient.enviarMensaje(mensajeData);
-        setMensajes(prev => [...prev, {
-          ...response,
-          remitente_nombre: user.nombre
-        }]);
+        // Fallback a REST (el backend deriva el rol del usuario autenticado).
+        const response = await apiClient.enviarMensaje({
+          contenido,
+          paciente_id: conversacionActiva.paciente_id,
+          medico_id: conversacionActiva.medico_id,
+        });
+        setMensajes(prev => (prev.some(m => m.id === response.id)
+          ? prev
+          : [...prev, { ...response, remitente_nombre: response.remitente_nombre || user.nombre }]));
       }
 
       setNuevoMensaje('');
