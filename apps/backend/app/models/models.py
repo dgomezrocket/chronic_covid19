@@ -69,6 +69,27 @@ class Paciente(Base):
     hospital = relationship("Hospital", back_populates="pacientes")
 
 
+class PasswordResetToken(Base):
+    """
+    Token de recuperación de contraseña.
+
+    Se guarda SOLO el hash SHA-256 del token (nunca el token en claro). El token
+    en claro se envía por email y se valida hasheándolo de nuevo. Es de un solo
+    uso (`used`) y con expiración (`expires_at`). Como los usuarios viven en
+    varias tablas, se guarda `rol` + `usuario_id` para resolver la cuenta.
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    rol = Column(String, nullable=False)
+    usuario_id = Column(Integer, nullable=False)
+    email = Column(String, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+
 class Especialidad(Base):
     __tablename__ = "especialidades"
 

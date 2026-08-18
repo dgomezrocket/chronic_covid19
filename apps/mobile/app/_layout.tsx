@@ -42,10 +42,13 @@ function RootNavigator() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inTabsGroup = segments[0] === '(tabs)';
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuthGroup) {
+    } else if (isAuthenticated && !inTabsGroup) {
+      // Autenticado pero fuera de las tabs (arranque en `index` o en `(auth)`):
+      // llevar al área privada. Si ya está en tabs, no redirige (evita bucle).
       router.replace('/(tabs)/datos');
     }
   }, [isAuthenticated, isLoading, segments, router]);

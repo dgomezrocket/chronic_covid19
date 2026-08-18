@@ -61,6 +61,15 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface ForgotPasswordData {
+  email: string;
+}
+
+export interface ResetPasswordData {
+  token: string;
+  new_password: string;
+}
+
 export interface RegisterPacienteData {
   documento: string;
   nombre: string;

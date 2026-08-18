@@ -113,3 +113,54 @@ def enviar_bienvenida_medico(
 """
 
     enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
+
+
+def enviar_recuperacion_password(
+    email: str,
+    nombre: str,
+    token: str,
+    expira_minutos: int,
+) -> None:
+    """
+    Envía el correo de recuperación de contraseña con el código/enlace.
+    Incluye el código (para pegar en la app móvil) y un enlace al frontend web.
+    Lanza EmailNoConfiguradoError o EmailEnvioError si no puede enviarse.
+    """
+    reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
+    asunto = "Recuperación de contraseña - Salud en Mapa"
+
+    cuerpo_texto = (
+        f"Recuperación de contraseña\n\n"
+        f"Hola {nombre},\n\n"
+        f"Recibimos una solicitud para restablecer tu contraseña.\n\n"
+        f"Código de recuperación: {token}\n\n"
+        f"Ingresá este código en la app para definir una nueva contraseña, "
+        f"o abrí este enlace: {reset_url}\n\n"
+        f"El código vence en {expira_minutos} minutos y solo puede usarse una vez.\n\n"
+        f"Si no solicitaste este cambio, podés ignorar este mensaje.\n\n"
+        f"Este es un mensaje automático, por favor no respondas a este correo."
+    )
+
+    cuerpo_html = f"""\
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+    <h2 style="color: #2571b6;">Recuperación de contraseña</h2>
+    <p>Hola <strong>{nombre}</strong>,</p>
+    <p>Recibimos una solicitud para restablecer tu contraseña.</p>
+    <p>Código de recuperación:</p>
+    <p style="font-size: 18px; background: #f3f4f6; padding: 10px 14px; border-radius: 8px;
+              display: inline-block;"><code>{token}</code></p>
+    <p>Ingresá este código en la app para definir una nueva contraseña, o usá el botón:</p>
+    <p style="margin-top: 12px;">
+      <a href="{reset_url}"
+         style="background: #2571b6; color: #fff; padding: 10px 18px; border-radius: 8px;
+                text-decoration: none;">Restablecer contraseña</a>
+    </p>
+    <p style="color: #6b7280;">El código vence en {expira_minutos} minutos y solo puede usarse una vez.
+       Si no solicitaste este cambio, podés ignorar este mensaje.</p>
+    <p style="color: #6b7280; font-size: 12px;">Este es un mensaje automático, por favor no respondas a este correo.</p>
+  </body>
+</html>
+"""
+
+    enviar_email(email, asunto, cuerpo_texto, cuerpo_html)

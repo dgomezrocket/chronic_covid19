@@ -108,13 +108,13 @@ Una vez que la aplicación esté en funcionamiento, puede acceder a la documenta
   - Parámetros: token
   - Respuesta: confirmación de cierre de sesión
 
-- **POST** `/api/v1/auth/reset-password` - Solicitar restablecimiento de contraseña
+- **POST** `/auth/forgot-password` - Solicitar restablecimiento de contraseña
   - Parámetros: email
-  - Respuesta: confirmación de envío de correo
+  - Respuesta: mensaje genérico (no revela si el email está registrado); si existe, envía un token por correo
 
-- **POST** `/api/v1/auth/reset-password/{token}` - Establecer nueva contraseña
+- **POST** `/auth/reset-password` - Establecer nueva contraseña
   - Parámetros: token, new_password
-  - Respuesta: confirmación de cambio de contraseña
+  - Respuesta: confirmación de cambio de contraseña (token de un solo uso y con expiración)
 
 #### Pacientes
 

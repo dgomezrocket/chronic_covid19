@@ -1,18 +1,37 @@
+import hashlib
+import logging
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.db import get_db
-from app.models.models import Paciente, Medico, Coordinador, Hospital, Admin, RolEnum, Especialidad  # Agregar Hospital aquí
+from app.models.models import (
+    Paciente, Medico, Coordinador, Hospital, Admin, RolEnum, Especialidad,
+    PasswordResetToken,
+)  # Agregar Hospital aquí
 from app.schemas.schemas import (
     PacienteCreate, MedicoCreate, CoordinadorCreate,
-    Token, UserInfo
+    Token, UserInfo,
+    ForgotPasswordRequest, ResetPasswordRequest, MessageResponse,
 )
 from app.core.security import (
     get_password_hash, verify_password, create_access_token, get_current_user
 )
+from app.core.config import settings
+from app.services import email_service
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Orden de búsqueda de cuentas por email (los usuarios viven en varias tablas).
+_MODELOS_POR_ROL = [
+    ("paciente", Paciente),
+    ("medico", Medico),
+    ("coordinador", Coordinador),
+    ("admin", Admin),
+]
 
 
 # ========== REGISTRO DE USUARIOS ==========
@@ -273,3 +292,112 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
 def register_default(paciente: PacienteCreate, db: Session = Depends(get_db)):
     """Alias de /register/paciente para compatibilidad"""
     return register_paciente(paciente, db)
+
+
+# ========== RECUPERACIÓN DE CONTRASEÑA ==========
+
+def _hash_token(token: str) -> str:
+    """Hash SHA-256 (hex) del token; nunca se guarda el token en claro."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _buscar_cuenta_por_email(db: Session, email: str):
+    """Busca una cuenta por email en las 4 tablas de usuarios. Devuelve (rol, user) o (None, None)."""
+    for rol, modelo in _MODELOS_POR_ROL:
+        user = db.query(modelo).filter(modelo.email == email).first()
+        if user:
+            return rol, user
+    return None, None
+
+
+def _modelo_por_rol(rol: str):
+    for r, modelo in _MODELOS_POR_ROL:
+        if r == rol:
+            return modelo
+    return None
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Solicita la recuperación de contraseña. Por seguridad, la respuesta es SIEMPRE
+    genérica: no revela si el email está o no registrado.
+    """
+    mensaje_generico = {
+        "message": "Si el email está registrado, te enviamos instrucciones para restablecer la contraseña."
+    }
+
+    email = str(body.email).strip().lower()
+    rol, user = _buscar_cuenta_por_email(db, email)
+    if not user:
+        return mensaje_generico
+
+    # Invalidar tokens anteriores no usados de esta cuenta.
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.email == email,
+        PasswordResetToken.used == False,  # noqa: E712
+    ).update({PasswordResetToken.used: True})
+
+    token = secrets.token_urlsafe(32)
+    expira_minutos = settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    reset = PasswordResetToken(
+        token_hash=_hash_token(token),
+        rol=rol,
+        usuario_id=user.id,
+        email=email,
+        expires_at=datetime.utcnow() + timedelta(minutes=expira_minutos),
+        used=False,
+    )
+    db.add(reset)
+    db.commit()
+
+    # El fallo de envío NO debe romper la respuesta genérica ni revelar información.
+    try:
+        email_service.enviar_recuperacion_password(
+            email=email,
+            nombre=getattr(user, "nombre", ""),
+            token=token,
+            expira_minutos=expira_minutos,
+        )
+    except email_service.EmailNoConfiguradoError:
+        logger.warning("SMTP no configurado: no se envió el correo de recuperación.")
+    except Exception as e:  # noqa: BLE001
+        logger.error("Falló el envío del correo de recuperación: %s", e)
+
+    return mensaje_generico
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Restablece la contraseña usando el token recibido por email. El token es de un
+    solo uso y con expiración.
+    """
+    error_invalido = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="El código de recuperación es inválido o expiró.",
+    )
+
+    if not body.new_password or len(body.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña debe tener al menos 6 caracteres.",
+        )
+
+    reset = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == _hash_token(body.token),
+        PasswordResetToken.used == False,  # noqa: E712
+    ).first()
+    if not reset or reset.expires_at < datetime.utcnow():
+        raise error_invalido
+
+    modelo = _modelo_por_rol(reset.rol)
+    user = db.query(modelo).filter(modelo.id == reset.usuario_id).first() if modelo else None
+    if not user:
+        raise error_invalido
+
+    user.hashed_password = get_password_hash(body.new_password)
+    reset.used = True
+    db.commit()
+
+    return {"message": "Tu contraseña fue actualizada correctamente. Ya podés iniciar sesión."}

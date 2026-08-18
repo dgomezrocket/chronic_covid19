@@ -27,4 +27,7 @@ class Settings(BaseSettings):
     # URL pública del frontend (para enlaces en los correos)
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://www.saludenmapa.com")
 
+    # Minutos de validez del token de recuperación de contraseña
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
+
 settings = Settings()
