@@ -203,8 +203,8 @@ importers:
   packages/api-client:
     dependencies:
       '@chronic-covid19/shared-types':
-        specifier: file:../shared-types
-        version: file:packages/shared-types
+        specifier: workspace:*
+        version: link:../shared-types
       axios:
         specifier: ^1.6.2
         version: 1.13.1
@@ -9214,7 +9214,7 @@ packages:
     resolution: {directory: packages/api-client, type: directory}
     name: '@chronic-covid19/api-client'
     dependencies:
-      '@chronic-covid19/shared-types': file:packages/shared-types
+      '@chronic-covid19/shared-types': link:packages/shared-types
       axios: 1.13.1
       zod: 3.25.76
     transitivePeerDependencies:

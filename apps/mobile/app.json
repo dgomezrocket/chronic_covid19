@@ -26,7 +26,9 @@
       "package": "com.covid19monitor.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -41,6 +43,12 @@
         }
       ]
     ],
-    "scheme": "covid19monitor"
+    "scheme": "covid19monitor",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "45a22ee1-188b-432b-bf92-e8da1fae53f5"
+      }
+    }
   }
 }
