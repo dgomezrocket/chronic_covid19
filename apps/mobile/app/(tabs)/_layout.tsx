@@ -1,46 +1,62 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from 'native-base';
-
-type IoniconName = keyof typeof Ionicons.glyphMap;
-
-const icon =
-  (name: IoniconName) =>
-  ({ color, size }: { color: string; size: number }) =>
-    <Ionicons name={name} color={color} size={size} />;
+import { useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: true,
-        tabBarActiveTintColor: theme.colors.primary[600],
-        tabBarInactiveTintColor: theme.colors.gray[400],
-        tabBarStyle: { paddingBottom: 4, height: 60 },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.onSurfaceDisabled,
+        // Suma el inset inferior para no solaparse con la barra de navegación
+        // del sistema (edge-to-edge es el default en Android con SDK 54).
+        tabBarStyle: {
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom + 4,
+          paddingTop: 4,
+        },
         tabBarLabelStyle: { fontSize: 11 },
       }}
     >
       <Tabs.Screen
         name="datos"
-        options={{ title: 'Datos', tabBarIcon: icon('person-outline') }}
+        options={{
+          title: 'Datos',
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
+        }}
       />
       <Tabs.Screen
         name="formularios"
-        options={{ title: 'Formularios', tabBarIcon: icon('document-text-outline') }}
+        options={{
+          title: 'Formularios',
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" color={color} size={size} />,
+        }}
       />
       <Tabs.Screen
         name="respuestas"
-        options={{ title: 'Respuestas', tabBarIcon: icon('checkmark-done-outline') }}
+        options={{
+          title: 'Respuestas',
+          tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-outline" color={color} size={size} />,
+        }}
       />
       <Tabs.Screen
         name="hospitales"
-        options={{ title: 'Hospitales', tabBarIcon: icon('medkit-outline') }}
+        options={{
+          title: 'Hospitales',
+          tabBarIcon: ({ color, size }) => <Ionicons name="medkit-outline" color={color} size={size} />,
+        }}
       />
       <Tabs.Screen
         name="mensajes"
-        options={{ title: 'Mensajes', tabBarIcon: icon('chatbubbles-outline') }}
+        options={{
+          title: 'Mensajes',
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" color={color} size={size} />,
+        }}
       />
     </Tabs>
   );

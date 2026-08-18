@@ -1,14 +1,25 @@
-import { Center, Spinner } from 'native-base';
+import { View, StyleSheet } from 'react-native';
+import { ActivityIndicator } from 'react-native-paper';
+import { theme } from '../src/theme';
 
 /**
  * Landing momentáneo. La redirección real la decide el navegador raíz
- * (`app/_layout.tsx`) según el estado de sesión, así que aquí solo mostramos
- * un spinner para evitar un parpadeo antes de que el efecto redirija.
+ * (`app/_layout.tsx`) según el estado de sesión; aquí solo mostramos un
+ * indicador para evitar un parpadeo antes de que el efecto redirija.
  */
 export default function Index() {
   return (
-    <Center flex={1} bg="white">
-      <Spinner size="lg" color="primary.500" accessibilityLabel="Cargando" />
-    </Center>
+    <View style={styles.center}>
+      <ActivityIndicator size="large" color={theme.colors.primary} accessibilityLabel="Cargando" />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+});

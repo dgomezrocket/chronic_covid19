@@ -1,4 +1,4 @@
-// Metro config para monorepo pnpm + Turborepo (Expo SDK 50).
+// Metro config para monorepo pnpm + Turborepo (Expo SDK 54).
 // Permite que Metro resuelva los packages del workspace
 // (@chronic-covid19/api-client, @chronic-covid19/shared-types) y siga los
 // symlinks/hoisting de pnpm desde la raíz del monorepo.
@@ -14,15 +14,10 @@ const config = getDefaultConfig(projectRoot);
 config.watchFolders = [workspaceRoot];
 
 // 2. Resolver módulos tanto en node_modules local como en el de la raíz.
+//    Metro (SDK 54) sigue los symlinks de pnpm por defecto.
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-
-// 3. En pnpm los paquetes viven en un store aislado (.pnpm) y se enlazan por
-//    symlink dentro del node_modules de cada paquete. Metro (SDK 50) sigue esos
-//    symlinks por defecto, así que NO se deshabilita la búsqueda jerárquica:
-//    es lo que permite resolver las deps transitivas de cada dependencia.
-config.resolver.unstable_enableSymlinks = true;
 
 module.exports = config;

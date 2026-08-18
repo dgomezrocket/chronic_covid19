@@ -1,11 +1,24 @@
-import { Center, Heading } from 'native-base';
+import { View, StyleSheet } from 'react-native';
+import { Text } from 'react-native-paper';
 
 export default function Hospitales() {
   return (
-    <Center flex={1} bg="white" px={6}>
-      <Heading size="lg" color="primary.700">
+    <View style={styles.container}>
+      <Text variant="headlineSmall" style={styles.title}>
         Hospitales
-      </Heading>
-    </Center>
+      </Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    color: '#1c5891',
+  },
+});
