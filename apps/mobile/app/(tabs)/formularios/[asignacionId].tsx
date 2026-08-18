@@ -1,0 +1,252 @@
+import { useCallback, useEffect, useState } from 'react';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { ActivityIndicator, Button, Snackbar, Text, useTheme } from 'react-native-paper';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { Formulario, FormularioAsignacionDetalle } from '@chronic-covid19/shared-types';
+import { apiClient } from '../../../src/lib/api';
+import { mensajeDeError } from '../../../src/lib/errors';
+import {
+  estaVencida,
+  validarFormulario,
+  type RespuestasFormulario,
+} from '../../../src/lib/formularios';
+import { normalizarTextoVisible } from '../../../src/lib/text';
+import { PreguntaField } from '../../../src/components/formularios/PreguntaField';
+
+type EstadoCarga =
+  | 'cargando'
+  | 'error'
+  | 'no-encontrado'
+  | 'completado'
+  | 'vencido'
+  | 'no-disponible'
+  | 'listo';
+
+export default function ResponderFormulario() {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { asignacionId } = useLocalSearchParams<{ asignacionId: string }>();
+
+  const [estadoCarga, setEstadoCarga] = useState<EstadoCarga>('cargando');
+  const [asignacion, setAsignacion] = useState<FormularioAsignacionDetalle | null>(null);
+  const [formulario, setFormulario] = useState<Formulario | null>(null);
+  const [valores, setValores] = useState<Record<string, string>>({});
+  const [errores, setErrores] = useState<Record<string, string>>({});
+  const [enviando, setEnviando] = useState(false);
+  const [snackbar, setSnackbar] = useState<string | null>(null);
+
+  const volver = () => router.replace('/formularios');
+
+  const cargar = useCallback(async () => {
+    setEstadoCarga('cargando');
+    const id = Number(asignacionId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setEstadoCarga('no-encontrado');
+      return;
+    }
+    try {
+      // No confiamos solo en el parámetro: validamos contra las asignaciones del
+      // paciente autenticado (pertenencia + estado + vencimiento).
+      const todas = await apiClient.getMisFormulariosAsignados('todos');
+      const a = todas.find((x) => x.id === id);
+      if (!a) {
+        setEstadoCarga('no-encontrado');
+        return;
+      }
+      setAsignacion(a);
+      if (a.estado === 'completado') {
+        setEstadoCarga('completado');
+        return;
+      }
+      if (a.estado !== 'pendiente') {
+        setEstadoCarga(a.estado === 'expirado' ? 'vencido' : 'no-disponible');
+        return;
+      }
+      if (estaVencida(a.fecha_expiracion)) {
+        setEstadoCarga('vencido');
+        return;
+      }
+      const f = await apiClient.getFormularioById(a.formulario_id);
+      setFormulario(f);
+      setEstadoCarga('listo');
+    } catch (e) {
+      mensajeDeError(e);
+      setEstadoCarga('error');
+    }
+  }, [asignacionId]);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  const setValor = (id: string, v: string) => {
+    setValores((prev) => ({ ...prev, [id]: v }));
+    setErrores((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const confirmarEnvio = async (respuestas: RespuestasFormulario) => {
+    if (!asignacion || enviando) return;
+    // Re-chequeo antes del envío definitivo.
+    if (asignacion.estado !== 'pendiente' || estaVencida(asignacion.fecha_expiracion)) {
+      setSnackbar('Este formulario ya no puede responderse.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      // IMPORTANTE: se pasa el mapa PLANO; el api-client ya envuelve en { respuestas }.
+      await apiClient.responderFormulario(asignacion.id, respuestas);
+      Alert.alert('Listo', 'Formulario enviado correctamente', [
+        { text: 'OK', onPress: volver },
+      ]);
+    } catch (e) {
+      setSnackbar(
+        mensajeDeError(
+          e,
+          'No pudimos enviar tus respuestas. Revisá tu conexión e intentá nuevamente.',
+        ),
+      );
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const enviar = () => {
+    if (!formulario) return;
+    const { ok, errores: errs, respuestas } = validarFormulario(formulario.preguntas, valores);
+    setErrores(errs);
+    if (!ok) {
+      setSnackbar('Revisá los campos marcados.');
+      return;
+    }
+    Alert.alert(
+      'Enviar respuestas',
+      '¿Confirmás que deseas enviar el formulario? Una vez completado, no podrás editar tus respuestas desde la aplicación.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Enviar', onPress: () => confirmarEnvio(respuestas) },
+      ],
+    );
+  };
+
+  // ----- Estados no editables -----
+  if (estadoCarga === 'cargando') {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={theme.colors.primary} accessibilityLabel="Cargando" />
+        <Text variant="bodyMedium" style={styles.muted}>
+          Cargando formulario…
+        </Text>
+      </View>
+    );
+  }
+
+  if (estadoCarga === 'error') {
+    return (
+      <View style={styles.center}>
+        <Text variant="titleMedium" style={styles.muted}>
+          No pudimos cargar este formulario.
+        </Text>
+        <Button mode="contained" onPress={cargar} style={styles.button} contentStyle={styles.buttonContent}>
+          Reintentar
+        </Button>
+        <Button mode="text" onPress={volver}>
+          Volver a Formularios
+        </Button>
+      </View>
+    );
+  }
+
+  if (estadoCarga !== 'listo') {
+    const mensaje =
+      estadoCarga === 'no-encontrado'
+        ? 'Formulario no encontrado.'
+        : estadoCarga === 'completado'
+          ? 'Este formulario ya fue completado.'
+          : estadoCarga === 'vencido'
+            ? 'Formulario vencido.'
+            : 'Este formulario ya no está disponible.';
+    return (
+      <View style={styles.center}>
+        <Text variant="titleMedium" style={styles.muted}>
+          {mensaje}
+        </Text>
+        <Button mode="contained" onPress={volver} style={styles.button} contentStyle={styles.buttonContent}>
+          Volver a Formularios
+        </Button>
+      </View>
+    );
+  }
+
+  // ----- Formulario editable -----
+  const titulo =
+    normalizarTextoVisible(formulario?.titulo) ||
+    normalizarTextoVisible(asignacion?.formulario_titulo) ||
+    'Formulario';
+  const descripcion = normalizarTextoVisible(formulario?.descripcion);
+
+  return (
+    <>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 32 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text variant="headlineSmall" style={styles.titulo}>
+          {titulo}
+        </Text>
+        {descripcion ? (
+          <Text variant="bodyMedium" style={styles.muted}>
+            {descripcion}
+          </Text>
+        ) : null}
+
+        {formulario?.preguntas.map((pregunta) => (
+          <PreguntaField
+            key={pregunta.id}
+            pregunta={pregunta}
+            valor={valores[pregunta.id]}
+            error={errores[pregunta.id]}
+            onChange={(v) => setValor(pregunta.id, v)}
+          />
+        ))}
+
+        <Button
+          mode="contained"
+          onPress={enviar}
+          loading={enviando}
+          disabled={enviando}
+          style={styles.button}
+          contentStyle={styles.buttonContent}
+        >
+          Enviar respuestas
+        </Button>
+      </ScrollView>
+
+      <Snackbar visible={!!snackbar} onDismiss={() => setSnackbar(null)} duration={3500}>
+        {snackbar}
+      </Snackbar>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#ffffff',
+    gap: 12,
+  },
+  container: { padding: 16, gap: 16, backgroundColor: '#ffffff' },
+  titulo: { color: '#1c5891' },
+  muted: { color: '#6b7280' },
+  button: { borderRadius: 12, marginTop: 12 },
+  buttonContent: { paddingVertical: 6 },
+});

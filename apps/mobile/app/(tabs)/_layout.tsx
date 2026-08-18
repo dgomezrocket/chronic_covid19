@@ -34,6 +34,8 @@ export default function TabsLayout() {
         name="formularios"
         options={{
           title: 'Formularios',
+          // El Stack anidado (formularios/_layout) provee sus propios headers.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" color={color} size={size} />,
         }}
       />

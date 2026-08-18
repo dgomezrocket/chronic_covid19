@@ -13,3 +13,16 @@ export function formatDistancia(km?: number | null): string {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1).replace('.', ',')} km`;
 }
+
+/**
+ * Formatea una fecha ISO (`YYYY-MM-DD` o `YYYY-MM-DDThh:mm:ss`) como `dd/mm/aaaa`
+ * (formato Paraguay). Parsea solo la parte de fecha, sin `new Date(iso)`, para
+ * evitar corrimientos de día por zona horaria. Devuelve '' si no es válida.
+ */
+export function formatFechaCorta(iso?: string | null): string {
+  if (!iso) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return '';
+  const [, y, mm, dd] = m;
+  return `${dd}/${mm}/${y}`;
+}
