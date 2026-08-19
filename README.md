@@ -575,6 +575,25 @@ eas login
 eas build -p android --profile preview   # genera un APK instalable
 ```
 
+> ⚠️ **Requisito previo: Google Maps API key.** Las pantallas de hospitales y el selector de
+> ubicación usan `react-native-maps`, que en Android necesita una key propia (Expo Go usa la de
+> Expo, pero un APK sin key aborta con `IllegalStateException: API key not found.`).
+>
+> 1. En Google Cloud Console: habilitar facturación y la API **Maps SDK for Android**, crear una
+>    API key y restringirla a *Android apps* con el package `com.covid19monitor.app` + la huella
+>    SHA-1 del keystore (`eas credentials`), y a la API *Maps SDK for Android*.
+> 2. Para desarrollo local: `GOOGLE_MAPS_ANDROID_API_KEY` en `apps/mobile/.env`
+>    (ver [`.env.example`](apps/mobile/.env.example)).
+> 3. Para builds de EAS, registrarla como Environment Variable del proyecto:
+>    ```bash
+>    eas env:create --name GOOGLE_MAPS_ANDROID_API_KEY --value "AIza..." \
+>      --environment development --environment preview --environment production \
+>      --visibility sensitive
+>    ```
+>
+> `apps/mobile/app.config.js` la inyecta en `android.config.googleMaps.apiKey`, y el prebuild de
+> Expo la escribe como `com.google.android.geo.API_KEY` en el `AndroidManifest.xml` generado.
+
 ### ➕ Agregar dependencias
 
 ```bash
