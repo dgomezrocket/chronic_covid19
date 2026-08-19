@@ -75,7 +75,7 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - **Paciente** → app mobile/portal web: perfil, formularios asignados, hospitales cercanos y chat con su médico.
 - **Médico** → portal web: pacientes asignados, creación/asignación de formularios, revisión de respuestas y chat.
 - **Coordinador** → portal web: gestión del hospital, asignación médico–paciente e importación masiva de médicos.
-- **Administrador** → portal web: gestión de hospitales, coordinadores y especialidades.
+- **Administrador** → portal web: gestión de hospitales, coordinadores, especialidades y otros administradores (con invitaciones por correo).
 
 ### 🔐 Autenticación y Seguridad
 - **JWT (JSON Web Tokens)** para autenticación stateless (OAuth2 password flow).
@@ -83,6 +83,18 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - **Control de acceso basado en roles** aplicado en el backend.
 - Recuperación de contraseña por correo con **token de un solo uso y expiración**.
 - **Validación de datos** con Pydantic (backend) y Zod (frontend/mobile).
+
+### 🛡️ Gestión de Administradores
+- Alta de administradores por **invitación por correo**: nadie necesita compartir contraseñas ni cargarlas a mano.
+- Flujo completo:
+  1. Un administrador invita por email desde `/dashboard/admin/administradores`.
+  2. El sistema envía un enlace a `FRONTEND_URL/aceptar-invitacion-admin?token=…`.
+  3. El invitado abre el enlace (con su email precargado en solo lectura) y define documento, nombre, teléfono y contraseña.
+  4. La cuenta queda creada con rol `admin` y el invitado ingresa por `/login`.
+- Token de **un solo uso** con expiración configurable (`ADMIN_INVITATION_TOKEN_EXPIRE_HOURS`, 48 h por defecto); el reenvío invalida la invitación anterior.
+- En la base sólo se guarda el **hash SHA-256** del token (tabla `admin_invitations`), nunca el valor en claro.
+- CRUD completo desde el portal: listado con búsqueda por nombre/email/documento, alta directa, edición, baja lógica y reactivación.
+- El **primer administrador** se crea por consola con `python -m app.scripts.create_first_admin`; desde ahí en adelante se usan las invitaciones.
 
 ### 📋 Formularios Clínicos Dinámicos
 - Los médicos crean formularios con preguntas de tipo texto, número, selección o fecha.
@@ -274,7 +286,11 @@ SMTP_FROM_NAME=Salud en Mapa
 SMTP_STARTTLS=true
 
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
+ADMIN_INVITATION_TOKEN_EXPIRE_HOURS=48   # validez del enlace de invitación de admin
 ```
+
+> 💡 Si el bloque SMTP queda vacío, las **invitaciones de administrador se crean igual pero el correo no se
+> envía** (el envío se omite sin cortar la operación). En desarrollo, tomá el enlace de los logs del backend.
 
 El backend quedará disponible en **http://localhost:8000**:
 - 📘 Swagger UI: **http://localhost:8000/docs**
@@ -348,7 +364,7 @@ chronic_covid19/
 │   │
 │   ├── web/                     # 🌐 Portal Next.js 14 (staff + vistas de paciente)
 │   │   └── src/
-│   │       ├── app/             # App Router: login, register, dashboard/{admin,coordinador,medico,paciente}
+│   │       ├── app/             # App Router: login, register, aceptar-invitacion-admin, dashboard/{admin,coordinador,medico,paciente}
 │   │       ├── components/      # Chat, LocationPicker, mapas (Leaflet), etc.
 │   │       └── store/           # Estado de sesión (Zustand)
 │   │
@@ -356,6 +372,7 @@ chronic_covid19/
 │       ├── app/                 # Expo Router: (auth) y (tabs): datos, formularios, respuestas, hospitales, mensajes
 │       ├── src/                 # components, hooks, lib (api/auth), store, theme
 │       ├── app.json             # Config Expo (com.covid19monitor.app)
+│       ├── app.config.js        # Inyecta la Google Maps API key desde el entorno
 │       └── eas.json             # Perfiles de build EAS
 │
 ├── packages/
@@ -460,12 +477,21 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 ### 🛡️ Admins — `/admins`
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
+| POST | `/admins/invitaciones` | Crear y enviar una invitación por correo | 🛡️ Admin |
+| GET | `/admins/invitaciones/validar?token=` | Validar el token y obtener el email invitado | ❌ |
+| POST | `/admins/invitaciones/aceptar` | Aceptar la invitación y crear la cuenta | ❌ |
+| POST | `/admins/invitaciones/{id}/reenviar` | Reenviar la invitación (invalida la anterior) | 🛡️ Admin |
 | GET | `/admins/` | Listar administradores | 🛡️ Admin |
 | GET | `/admins/{id}` | Obtener administrador | 🛡️ Admin / Propio |
 | POST | `/admins/` | Crear administrador | 🛡️ Admin |
 | PUT | `/admins/{id}` | Actualizar administrador | 🛡️ Admin / Propio |
 | DELETE | `/admins/{id}` | Desactivar administrador | 🛡️ Admin |
 | POST | `/admins/{id}/reactivar` | Reactivar administrador | 🛡️ Admin |
+
+> 📝 Las rutas de invitación se declaran **antes** de `/{admin_id}` para que FastAPI no interprete
+> `invitaciones` como el path param numérico. `DELETE /admins/{id}` es una **baja lógica** (`activo = 0`) que
+> además impide auto-desactivarse y desactivar al último administrador activo. `POST /admins/invitaciones/{id}/reenviar`
+> ya está disponible en la API y en el `api-client`, pero todavía no tiene UI en el portal.
 
 ### 🧭 Coordinadores — `/coordinadores`
 | Método | Endpoint | Descripción | Auth |
@@ -617,10 +643,14 @@ Variable requerida: `NEXT_PUBLIC_API_URL` (URL pública del backend).
 
 ### 🔧 Backend → Railway (Docker)
 El [`Dockerfile`](apps/backend/Dockerfile) usa `python:3.11-slim`, ejecuta `alembic upgrade head` y arranca Uvicorn en el puerto `${PORT}`.
-Variables requeridas: `DATABASE_URL` (o `POSTGRES_*`), `SECRET_KEY`, y opcionalmente el bloque SMTP y `FRONTEND_URL`.
+Variables requeridas: `DATABASE_URL` (o `POSTGRES_*`), `SECRET_KEY` y `FRONTEND_URL` — esta última debe apuntar al
+dominio público de la web, porque construye los enlaces de **invitación de administrador** y de **reset de contraseña**.
+El bloque SMTP es opcional, pero sin él esos correos no salen.
 
 ### 📱 Mobile → EAS Build
 `eas build -p android --profile production`. La app usa `EXPO_PUBLIC_API_URL` apuntando al backend de producción (Railway).
+Requiere además `GOOGLE_MAPS_ANDROID_API_KEY` como Environment Variable del proyecto en EAS (ver la nota de la
+sección de compilación del APK).
 
 ---
 
