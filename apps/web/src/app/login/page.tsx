@@ -200,8 +200,13 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Link a registro simplificado */}
-          <div className="pt-4 border-t border-gray-200">
+          {/* Links a recuperación y registro */}
+          <div className="pt-4 border-t border-gray-200 space-y-3">
+            <p className="text-center text-sm">
+              <Link href="/forgot-password" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </p>
             <p className="text-center text-sm text-gray-600">
               ¿No tienes cuenta?{' '}
               <Link href="/register" className="font-semibold text-blue-600 hover:text-blue-700 transition-colors">
