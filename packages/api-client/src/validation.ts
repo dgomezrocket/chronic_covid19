@@ -88,10 +88,55 @@ export const updateAdminSchema = z.object({
   nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').optional(),
   email: z.string().email('Email inválido').optional(),
   telefono: z.string().optional(),
-  documento: z.string().optional(),
+  documento: z.string().min(1, 'El documento es requerido').optional(),
+  activo: z.number().optional(),
 });
 
 export type UpdateAdminFormData = z.infer<typeof updateAdminSchema>;
+
+// ========== CREATE ADMIN SCHEMA ==========
+export const createAdminSchema = z.object({
+  documento: z.string()
+    .min(3, 'El documento debe tener al menos 3 caracteres')
+    .max(20, 'El documento no puede tener más de 20 caracteres'),
+  nombre: z.string()
+    .min(3, 'El nombre debe tener al menos 3 caracteres')
+    .max(100, 'El nombre no puede tener más de 100 caracteres'),
+  email: z.string().email('Debe ser un email válido'),
+  telefono: z.string().optional(),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  confirmPassword: z.string().min(6, 'Confirmá la contraseña'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmPassword'],
+});
+
+export type CreateAdminFormData = z.infer<typeof createAdminSchema>;
+
+// ========== INVITE ADMIN SCHEMA ==========
+export const inviteAdminSchema = z.object({
+  email: z.string().email('Email inválido'),
+});
+
+export type InviteAdminFormData = z.infer<typeof inviteAdminSchema>;
+
+// ========== ACCEPT ADMIN INVITATION SCHEMA ==========
+export const acceptAdminInvitationSchema = z.object({
+  documento: z.string()
+    .min(3, 'El documento debe tener al menos 3 caracteres')
+    .max(20, 'El documento no puede tener más de 20 caracteres'),
+  nombre: z.string()
+    .min(3, 'El nombre debe tener al menos 3 caracteres')
+    .max(100, 'El nombre no puede tener más de 100 caracteres'),
+  telefono: z.string().optional(),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  confirmPassword: z.string().min(6, 'Confirmá la contraseña'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmPassword'],
+});
+
+export type AcceptAdminInvitationFormData = z.infer<typeof acceptAdminInvitationSchema>;
 
 
 // ========== 🆕 COORDINADOR SCHEMAS ==========

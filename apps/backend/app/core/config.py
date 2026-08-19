@@ -30,4 +30,7 @@ class Settings(BaseSettings):
     # Minutos de validez del token de recuperación de contraseña
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
 
+    # Horas de validez del token de invitación de administrador
+    ADMIN_INVITATION_TOKEN_EXPIRE_HOURS: int = int(os.getenv("ADMIN_INVITATION_TOKEN_EXPIRE_HOURS", "48"))
+
 settings = Settings()

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.db import get_db
-from app.models.models import Hospital, Medico, Paciente, Coordinador
+from app.models.models import Admin, Hospital, Medico, Paciente, Coordinador
 
 # Configuración - Usar settings centralizado
 SECRET_KEY = settings.SECRET_KEY
@@ -37,12 +37,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        print(f"🔐 Token recibido: {token[:20] if token else 'None'}...")
-        print(f"🔑 SECRET_KEY (primeros 10): {SECRET_KEY[:10]}...")
-        print(f"📜 JWT_ALGORITHM: {ALGORITHM}")
-
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        print(f"✅ Payload decodificado: {payload}")
 
         user_id: str = payload.get("sub")
         rol: str = payload.get("rol")
@@ -50,7 +45,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         nombre: str = payload.get("nombre")
 
         if user_id is None or rol is None:
-            print(f"❌ user_id o rol es None: user_id={user_id}, rol={rol}")
             raise credentials_exception
 
         # ✅ Devolver diccionario para compatibilidad con coordinador_service.py
@@ -60,11 +54,9 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             "email": email,
             "nombre": nombre
         }
-    except JWTError as e:
-        print(f"❌ JWTError: {type(e).__name__}: {e}")
+    except JWTError:
         raise credentials_exception
-    except Exception as e:
-        print(f"❌ Otro error: {type(e).__name__}: {e}")
+    except Exception:
         raise credentials_exception
 
 
@@ -77,13 +69,31 @@ def require_role(required_roles: list):
     return role_dependency
 
 
-def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Requiere que el usuario sea admin"""
+def require_admin(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Requiere que el usuario sea admin Y que la cuenta siga activa en la BD.
+
+    Revalida `activo` contra la base de datos para que un admin desactivado no
+    pueda seguir operando solo porque conserva un JWT emitido antes de la baja.
+    Solo afecta a rutas protegidas con require_admin (no toca a pacientes,
+    médicos ni coordinadores).
+    """
     if user["rol"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Se requieren permisos de administrador"
         )
+
+    admin = db.query(Admin).filter(Admin.id == user["id"]).first()
+    if not admin or admin.activo != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cuenta de administrador desactivada."
+        )
+
     return user
 
 

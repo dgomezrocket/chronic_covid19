@@ -90,6 +90,28 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 
+class AdminInvitation(Base):
+    """
+    Invitación para registrar un nuevo administrador.
+
+    Sigue el mismo patrón que PasswordResetToken: se guarda SOLO el hash SHA-256
+    del token (nunca el token en claro). El token en claro se envía por email y se
+    valida hasheándolo de nuevo. Es de un solo uso (`accepted_at`) y con expiración
+    (`expires_at`). Enviar la invitación NO crea la cuenta Admin: ésta se crea
+    únicamente cuando la persona completa el registro.
+    """
+    __tablename__ = "admin_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    invited_by_admin_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    accepted_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
+
 class Especialidad(Base):
     __tablename__ = "especialidades"
 

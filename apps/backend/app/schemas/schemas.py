@@ -602,6 +602,7 @@ class AdminCreate(AdminBase):
 class AdminUpdate(BaseModel):
     nombre: Optional[str] = None
     email: Optional[str] = None
+    documento: Optional[str] = None
     telefono: Optional[str] = None
     activo: Optional[int] = None
 
@@ -614,6 +615,29 @@ class AdminOut(AdminBase):
 
     class Config:
         from_attributes = True
+
+
+# ================================================================
+# ADMIN INVITATION SCHEMAS
+# ================================================================
+
+class AdminInvitationCreate(BaseModel):
+    """Solicitud para invitar a un nuevo administrador por email."""
+    email: EmailStr
+
+
+class AdminInvitationValidateOut(BaseModel):
+    """Respuesta al validar un token de invitación (email precompletado)."""
+    email: str
+
+
+class AdminInvitationAccept(BaseModel):
+    """Datos que completa la persona invitada para crear su cuenta admin."""
+    token: str
+    documento: str
+    nombre: str
+    telefono: Optional[str] = None
+    password: str
 
 
 # ================================================================

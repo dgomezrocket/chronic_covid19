@@ -267,8 +267,37 @@ export interface AdminCreate {
 export interface AdminUpdate {
   nombre?: string;
   email?: string;
+  documento?: string;
   telefono?: string;
   activo?: number;
+}
+
+// ========== TIPOS PARA INVITACIONES DE ADMINISTRADOR ==========
+
+export interface AdminInvitation {
+  id: number;
+  email: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at?: string | null;
+  revoked_at?: string | null;
+  invited_by_admin_id?: number | null;
+}
+
+export interface AdminInvitationCreate {
+  email: string;
+}
+
+export interface AdminInvitationAccept {
+  token: string;
+  documento: string;
+  nombre: string;
+  telefono?: string;
+  password: string;
+}
+
+export interface AdminInvitationValidateResponse {
+  email: string;
 }
 
 // ========== 🆕 COORDINADORES (adicionales) ==========

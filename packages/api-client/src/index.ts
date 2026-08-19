@@ -18,6 +18,8 @@ import {
   Admin,
   AdminCreate,
   AdminUpdate,
+  AdminInvitationAccept,
+  AdminInvitationValidateResponse,
     Coordinador,
   CoordinadorCreate,
   CoordinadorUpdate,
@@ -563,6 +565,58 @@ clearToken() {
   async reactivateAdmin(id: number): Promise<Admin> {
     try {
       const response = await this.client.post<Admin>(`/admins/${id}/reactivar`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ========== INVITACIONES DE ADMINISTRADOR ==========
+
+  /** Envía una invitación por email para registrar un nuevo administrador (solo admin) */
+  async inviteAdmin(email: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/admins/invitaciones',
+        { email }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Valida un token de invitación (público). Devuelve el email precompletado */
+  async validateAdminInvitation(token: string): Promise<AdminInvitationValidateResponse> {
+    try {
+      const response = await this.client.get<AdminInvitationValidateResponse>(
+        `/admins/invitaciones/validar?token=${encodeURIComponent(token)}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Acepta una invitación y crea la cuenta de administrador (público) */
+  async acceptAdminInvitation(data: AdminInvitationAccept): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/admins/invitaciones/aceptar',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Reenvía una invitación: invalida la anterior y genera un token nuevo (solo admin) */
+  async resendAdminInvitation(id: number): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        `/admins/invitaciones/${id}/reenviar`
+      );
       return response.data;
     } catch (error) {
       throw this.handleError(error);

@@ -164,3 +164,49 @@ def enviar_recuperacion_password(
 """
 
     enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
+
+
+def enviar_invitacion_admin(
+    email: str,
+    token: str,
+    expira_horas: int,
+) -> None:
+    """
+    Envía el correo de invitación para registrarse como administrador.
+    Incluye un enlace de un solo uso al frontend web con el token.
+    No envía ninguna contraseña.
+    Lanza EmailNoConfiguradoError o EmailEnvioError si no puede enviarse.
+    """
+    accept_url = f"{settings.FRONTEND_URL.rstrip('/')}/aceptar-invitacion-admin?token={token}"
+    asunto = "Invitación para administrar Salud en Mapa"
+
+    cuerpo_texto = (
+        f"Invitación a Salud en Mapa\n\n"
+        f"Hola,\n\n"
+        f"Has sido invitado a formar parte de Salud en Mapa como Administrador.\n\n"
+        f"Completá tu registro utilizando el siguiente enlace: {accept_url}\n\n"
+        f"El enlace vence en {expira_horas} horas y solo puede usarse una vez.\n\n"
+        f"Si no esperabas esta invitación, podés ignorar este mensaje.\n\n"
+        f"Este es un mensaje automático, por favor no respondas a este correo."
+    )
+
+    cuerpo_html = f"""\
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+    <h2 style="color: #2571b6;">Invitación a Salud en Mapa</h2>
+    <p>Hola,</p>
+    <p>Has sido invitado a formar parte de <strong>Salud en Mapa</strong> como Administrador.</p>
+    <p>Completá tu registro y creá tu contraseña con el siguiente botón:</p>
+    <p style="margin-top: 12px;">
+      <a href="{accept_url}"
+         style="background: #2571b6; color: #fff; padding: 10px 18px; border-radius: 8px;
+                text-decoration: none;">Completar registro</a>
+    </p>
+    <p style="color: #6b7280;">El enlace vence en {expira_horas} horas y solo puede usarse una vez.
+       Si no esperabas esta invitación, podés ignorar este mensaje.</p>
+    <p style="color: #6b7280; font-size: 12px;">Este es un mensaje automático, por favor no respondas a este correo.</p>
+  </body>
+</html>
+"""
+
+    enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
