@@ -114,6 +114,12 @@ constructor(baseURL?: string) {
   }
 
 setToken(token: string) {
+  // Si el token viene vacío es un error de programación (por ejemplo, un endpoint que
+  // dejó de devolver `access_token`). Falla con un mensaje legible en vez de reventar
+  // dentro del console.log con "cannot read property 'substring' of undefined".
+  if (!token) {
+    throw new Error('setToken: se recibió un token vacío. La respuesta del servidor no incluyó access_token.');
+  }
   console.log('🔐 setToken llamado con:', token.substring(0, 20) + '...');
   this.token = token;
 }
