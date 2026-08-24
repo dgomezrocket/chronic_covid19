@@ -115,6 +115,24 @@ export interface TokenResponse {
   token_type: string;
 }
 
+/**
+ * Respuesta del auto-registro público (F04). A propósito NO trae access_token: la
+ * cuenta queda pendiente de verificar el email y solo puede iniciar sesión después.
+ */
+export interface RegistrationPendingVerificationResponse {
+  message: string;
+  email: string;
+  requires_verification: boolean;
+}
+
+export interface VerifyEmailData {
+  token: string;
+}
+
+export interface ResendVerificationData {
+  email: string;
+}
+
 export interface AuthState {
   user: Usuario | null;
   token: string | null;

@@ -108,6 +108,15 @@ export default function LoginPage() {
               <div>
                 <p className="text-sm font-semibold text-red-800">Error de autenticación</p>
                 <p className="text-sm text-red-700 mt-1">{error}</p>
+                {/* F04: si falta verificar el correo, ofrecer el reenvío del enlace. */}
+                {error.toLowerCase().includes('verificar tu correo') && (
+                  <Link
+                    href="/verify-email"
+                    className="inline-block mt-2 text-sm font-semibold text-red-800 underline hover:text-red-900 transition-colors"
+                  >
+                    Reenviar correo de verificación
+                  </Link>
+                )}
               </div>
             </div>
           )}

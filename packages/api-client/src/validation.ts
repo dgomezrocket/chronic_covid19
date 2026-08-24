@@ -23,6 +23,19 @@ export const resetPasswordSchema = z.object({
 
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
+// ========== VERIFICACIÓN DE EMAIL (F04) ==========
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Falta el código de verificación'),
+});
+
+export type VerifyEmailFormData = z.infer<typeof verifyEmailSchema>;
+
+export const resendVerificationSchema = z.object({
+  email: z.string().email('Email inválido'),
+});
+
+export type ResendVerificationFormData = z.infer<typeof resendVerificationSchema>;
+
 // ========== REGISTER PACIENTE SCHEMA ==========
 export const registerPacienteSchema = z.object({
   documento: z.string().min(1, 'El documento es requerido'),

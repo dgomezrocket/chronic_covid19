@@ -327,6 +327,27 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class RegistrationPendingVerificationResponse(BaseModel):
+    """
+    Respuesta del auto-registro público (F04): la cuenta se creó pero queda pendiente
+    de verificar el email. A propósito NO incluye ningún access_token: el usuario debe
+    verificar su correo y después iniciar sesión normalmente.
+    """
+    message: str
+    email: str
+    requires_verification: bool = True
+
+
+class VerifyEmailRequest(BaseModel):
+    """Verificación de email con el token recibido por correo."""
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    """Reenvío del correo de verificación."""
+    email: EmailStr
+
+
 # ================================================================
 # PACIENTE SCHEMAS
 # ================================================================

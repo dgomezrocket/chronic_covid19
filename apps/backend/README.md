@@ -116,6 +116,22 @@ Una vez que la aplicación esté en funcionamiento, puede acceder a la documenta
   - Parámetros: token, new_password
   - Respuesta: confirmación de cambio de contraseña (token de un solo uso y con expiración)
 
+- **POST** `/auth/verify-email` - Verificar la cuenta con el token recibido por correo (F04)
+  - Parámetros: token
+  - Respuesta: confirmación de verificación (token de un solo uso y con expiración). No inicia sesión:
+    el usuario debe autenticarse por `/auth/login`. Si la cuenta ya estaba verificada devuelve éxito,
+    para que reabrir el enlace no muestre un error
+
+- **POST** `/auth/resend-verification` - Reenviar el correo de verificación.
+  - Parámetros: email
+  - Respuesta: mensaje genérico (no revela si el email existe ni si ya estaba verificado); si corresponde,
+    invalida los enlaces anteriores y envía uno nuevo
+
+> Nota: el autoregistro de pacientes y médicos (`/auth/register`, `/auth/register/paciente`,
+> `/auth/register/medico`) **ya no devuelve un token de acceso**: la cuenta queda pendiente de verificar
+> el email. Los médicos creados por la importación masiva y las cuentas preexistentes quedan verificados
+> y su flujo no cambia.
+
 #### Pacientes
 
 - **GET** `/api/v1/pacientes` - Listar todos los pacientes (admin/médico)

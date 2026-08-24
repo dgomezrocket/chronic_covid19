@@ -5,6 +5,7 @@ import {
   RegisterMedicoData,
   MedicoImportResult,
   TokenResponse,
+  RegistrationPendingVerificationResponse,
   Paciente,
   Medico,
   ApiError,
@@ -151,11 +152,18 @@ clearToken() {
     }
   }
 
-  async registerPaciente(data: RegisterPacienteData): Promise<TokenResponse> {
+  /**
+   * Registra un paciente (auto-registro público).
+   * F04: el backend NO devuelve token — la cuenta queda pendiente de verificar el email,
+   * así que acá no se setea ninguna sesión.
+   */
+  async registerPaciente(data: RegisterPacienteData): Promise<RegistrationPendingVerificationResponse> {
     try {
       console.log('📤 Registering paciente:', data);
-      const response = await this.client.post<TokenResponse>('/auth/register', data);
-      this.setToken(response.data.access_token);
+      const response = await this.client.post<RegistrationPendingVerificationResponse>(
+        '/auth/register',
+        data
+      );
       return response.data;
     } catch (error) {
       console.error('Registration error:', error);
@@ -163,11 +171,17 @@ clearToken() {
     }
   }
 
-  async registerMedico(data: RegisterMedicoData): Promise<TokenResponse> {
+  /**
+   * Registra un médico (auto-registro público).
+   * F04: igual que el paciente, no devuelve token ni inicia sesión.
+   */
+  async registerMedico(data: RegisterMedicoData): Promise<RegistrationPendingVerificationResponse> {
     try {
       console.log('📤 Registering medico:', data);
-      const response = await this.client.post<TokenResponse>('/auth/register/medico', data);
-      this.setToken(response.data.access_token);
+      const response = await this.client.post<RegistrationPendingVerificationResponse>(
+        '/auth/register/medico',
+        data
+      );
       return response.data;
     } catch (error) {
       console.error('Registration error:', error);
@@ -201,6 +215,38 @@ clearToken() {
       const response = await this.client.post<{ message: string }>(
         '/auth/reset-password',
         { token, new_password }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Verifica el email de una cuenta con el token del enlace recibido por correo (F04).
+   * No inicia sesión: después hay que ingresar por /login.
+   */
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/auth/verify-email',
+        { token }
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Reenvía el correo de verificación (F04).
+   * La respuesta del backend es siempre genérica: no revela si el email existe.
+   */
+  async resendVerification(email: string): Promise<{ message: string }> {
+    try {
+      const response = await this.client.post<{ message: string }>(
+        '/auth/resend-verification',
+        { email }
       );
       return response.data;
     } catch (error) {

@@ -57,6 +57,10 @@ class Paciente(Base):
     longitud = Column(Float, nullable=True)
     hashed_password = Column(String, nullable=False)
     rol = Column(Enum(RolEnum), default=RolEnum.paciente, nullable=False)
+    # Verificación del email (F04). El default es True A PROPÓSITO: las cuentas que ya
+    # existían y las creadas por vías administrativas quedan verificadas. SOLO el
+    # auto-registro público (`POST /auth/register/paciente`) pasa explícitamente False.
+    email_verificado = Column(Boolean, default=True, nullable=False, server_default=text("true"))
 
     hospital_id = Column(Integer, ForeignKey("hospitales.id"), nullable=True)
 
@@ -79,6 +83,31 @@ class PasswordResetToken(Base):
     varias tablas, se guarda `rol` + `usuario_id` para resolver la cuenta.
     """
     __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    rol = Column(String, nullable=False)
+    usuario_id = Column(Integer, nullable=False)
+    email = Column(String, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+
+class EmailVerificationToken(Base):
+    """
+    Token de verificación de email del auto-registro (F04).
+
+    Sigue exactamente el mismo patrón que PasswordResetToken: se guarda SOLO el
+    hash SHA-256 del token (nunca el token en claro). El token en claro se envía
+    por email y se valida hasheándolo de nuevo. Es de un solo uso (`used`) y con
+    expiración (`expires_at`). Como los usuarios viven en varias tablas, se guarda
+    `rol` + `usuario_id` para resolver la cuenta.
+
+    Es un modelo aparte de PasswordResetToken a propósito: demostrar que se controla
+    el correo y restablecer la contraseña son operaciones distintas.
+    """
+    __tablename__ = "email_verification_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
     token_hash = Column(String, unique=True, index=True, nullable=False)
@@ -137,6 +166,11 @@ class Medico(Base):
     # Indica si el médico debe cambiar su contraseña en el próximo inicio de sesión
     # (se activa en el alta masiva, donde la contraseña se genera automáticamente).
     debe_cambiar_password = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    # Verificación del email (F04). El default es True A PROPÓSITO: las cuentas que ya
+    # existían y las creadas por vías administrativas (importación masiva del coordinador)
+    # quedan verificadas. SOLO el auto-registro público (`POST /auth/register/medico`)
+    # pasa explícitamente False.
+    email_verificado = Column(Boolean, default=True, nullable=False, server_default=text("true"))
 
     # Relaciones Many-to-Many
     especialidades = relationship("Especialidad", secondary=medico_especialidad, back_populates="medicos")

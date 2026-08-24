@@ -166,6 +166,54 @@ def enviar_recuperacion_password(
     enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
 
 
+def enviar_verificacion_email(
+    email: str,
+    nombre: str,
+    token: str,
+    expira_horas: int,
+) -> None:
+    """
+    Envía el correo de verificación de cuenta del auto-registro (F04).
+    Incluye únicamente un enlace de un solo uso al frontend web con el token.
+    No envía contraseñas ni información sensible.
+    Lanza EmailNoConfiguradoError o EmailEnvioError si no puede enviarse.
+    """
+    verify_url = f"{settings.FRONTEND_URL.rstrip('/')}/verify-email?token={token}"
+    asunto = "Verificá tu cuenta - Salud en Mapa"
+
+    cuerpo_texto = (
+        f"Verificá tu cuenta\n\n"
+        f"Hola {nombre},\n\n"
+        f"Gracias por registrarte en Salud en Mapa.\n\n"
+        f"Para activar tu cuenta y poder iniciar sesión, verificá tu correo electrónico "
+        f"abriendo este enlace: {verify_url}\n\n"
+        f"El enlace vence en {expira_horas} horas y solo puede usarse una vez.\n\n"
+        f"Si no creaste esta cuenta, podés ignorar este mensaje.\n\n"
+        f"Este es un mensaje automático, por favor no respondas a este correo."
+    )
+
+    cuerpo_html = f"""\
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+    <h2 style="color: #2571b6;">Verificá tu cuenta</h2>
+    <p>Hola <strong>{nombre}</strong>,</p>
+    <p>Gracias por registrarte en <strong>Salud en Mapa</strong>.</p>
+    <p>Para activar tu cuenta y poder iniciar sesión, verificá tu correo electrónico con el siguiente botón:</p>
+    <p style="margin-top: 12px;">
+      <a href="{verify_url}"
+         style="background: #2571b6; color: #fff; padding: 10px 18px; border-radius: 8px;
+                text-decoration: none;">Verificar mi cuenta</a>
+    </p>
+    <p style="color: #6b7280;">El enlace vence en {expira_horas} horas y solo puede usarse una vez.
+       Si no creaste esta cuenta, podés ignorar este mensaje.</p>
+    <p style="color: #6b7280; font-size: 12px;">Este es un mensaje automático, por favor no respondas a este correo.</p>
+  </body>
+</html>
+"""
+
+    enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
+
+
 def enviar_invitacion_admin(
     email: str,
     token: str,

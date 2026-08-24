@@ -33,4 +33,7 @@ class Settings(BaseSettings):
     # Horas de validez del token de invitación de administrador
     ADMIN_INVITATION_TOKEN_EXPIRE_HOURS: int = int(os.getenv("ADMIN_INVITATION_TOKEN_EXPIRE_HOURS", "48"))
 
+    # Horas de validez del enlace de verificación de email (auto-registro, F04)
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS: int = int(os.getenv("EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS", "48"))
+
 settings = Settings()

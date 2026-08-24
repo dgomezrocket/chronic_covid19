@@ -82,6 +82,7 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - **Bcrypt** (passlib) para el hash de contraseñas.
 - **Control de acceso basado en roles** aplicado en el backend.
 - Recuperación de contraseña por correo con **token de un solo uso y expiración**.
+- **Verificación de cuenta por correo** obligatoria para pacientes y médicos que se autoregistran.
 - **Validación de datos** con Pydantic (backend) y Zod (frontend/mobile).
 
 #### 🔑 Recuperación de contraseña (Web y Mobile)
@@ -108,6 +109,51 @@ código a mano — el mismo que se usa en la app mobile (pantallas `recuperar` �
 
 > 🔒 La respuesta de `/auth/forgot-password` es **siempre genérica**, exista o no el email,
 > para no revelar qué cuentas están registradas.
+
+#### ✉️ Verificación de cuenta por correo.
+
+Los **pacientes y médicos que se autoregistran** desde la web deben verificar su correo
+electrónico **antes del primer acceso**. El registro crea la cuenta pero **no** devuelve
+ningún token de sesión:
+
+| Método | Endpoint | Uso |
+|--------|----------|-----|
+| POST | `/auth/verify-email` | Verificar la cuenta con el token del enlace (recibe `token`) |
+| POST | `/auth/resend-verification` | Reenviar el correo de verificación (recibe `email`) |
+
+**Flujo web:**
+
+```
+/register  →  /register/paciente ó /register/medico  →  cuenta pendiente
+           →  correo de verificación  →  «Revisá tu correo»
+           →  /verify-email?token=…   →  cuenta verificada  →  /login  →  dashboard
+```
+
+El correo incluye **solo un enlace**, armado con `FRONTEND_URL`
+(`{FRONTEND_URL}/verify-email?token=…`). No se envían contraseñas. El enlace es de un solo
+uso y vence según `EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS` (48 h por defecto); al reenviarlo
+se invalidan los enlaces anteriores. Si se entra a `/verify-email` sin token —o el enlace
+venció— la página ofrece el formulario de reenvío, igual que el enlace que aparece en
+`/login` cuando falta verificar.
+
+Intentar iniciar sesión sin verificar devuelve **403** con el mensaje
+«Debés verificar tu correo electrónico antes de iniciar sesión.» (nunca «Credenciales
+incorrectas»). La cuenta de paciente es la misma en web y mobile: quien se registra desde
+la app verifica con el enlace de la web y después puede entrar desde cualquiera de las dos.
+
+> ⚠️ **Solo aplica al autoregistro público.** Administradores, coordinadores, las cuentas
+> que ya existían y los **médicos creados por la importación masiva** siguen entrando como
+> siempre: el campo `email_verificado` nace en `true` y únicamente el autoregistro lo pone
+> en `false`. La migración deja todas las filas existentes como verificadas.
+
+> 🔒 La respuesta de `/auth/resend-verification` es **siempre genérica** (exista o no el
+> email, y esté o no ya verificado) para no revelar qué cuentas están registradas. El token
+> se guarda **solo hasheado** (SHA-256), igual que el de recuperación de contraseña, pero en
+> una tabla aparte: verificar el correo y restablecer la contraseña son operaciones distintas.
+
+> 💡 Con SMTP sin configurar, el autoregistro **crea la cuenta pero el correo no sale**, así
+> que la cuenta no podrá iniciar sesión. En desarrollo, tomá el enlace de los logs del
+> backend o configurá SMTP; `/auth/resend-verification` es la vía de rescate.
 
 ### 🛡️ Gestión de Administradores
 - Alta de administradores por **invitación por correo**: nadie necesita compartir contraseñas ni cargarlas a mano.
@@ -349,17 +395,22 @@ SMTP_FROM_NAME=Salud en Mapa
 SMTP_STARTTLS=true
 
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
-ADMIN_INVITATION_TOKEN_EXPIRE_HOURS=48   # validez del enlace de invitación de admin
+ADMIN_INVITATION_TOKEN_EXPIRE_HOURS=48    # validez del enlace de invitación de admin
+EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS=48  # validez del enlace de verificación de cuenta
 ```
 
 > 💡 Si el bloque SMTP queda vacío, las **invitaciones de administrador se crean igual pero el correo no se
 > envía** (el envío se omite sin cortar la operación). En desarrollo, tomá el enlace de los logs del backend.
 > Lo mismo aplica a la recuperación de contraseña: la respuesta sigue siendo genérica aunque el correo no salga.
 
+> ⚠️ **SMTP es necesario para el autoregistro.** Los pacientes y médicos que se registran solos
+> quedan pendientes de verificar su correo, así que sin SMTP configurado la cuenta se crea pero **no puede
+> iniciar sesión**. Configurá SMTP o usá `/auth/resend-verification` una vez configurado.
+
 > ⚠️ **`FRONTEND_URL` en producción** debe ser el dominio público de la web
-> (`https://www.saludenmapa.com`), porque de ahí salen los enlaces de recuperación de contraseña
-> y de invitación de administradores. El valor por defecto en el código ya es ese dominio
-> (`app/core/config.py`); `http://localhost:3000` es únicamente para desarrollo local.
+> (`https://www.saludenmapa.com`), porque de ahí salen los enlaces de recuperación de contraseña,
+> de invitación de administradores y de verificación de cuenta. El valor por defecto en el código ya
+> es ese dominio (`app/core/config.py`); `http://localhost:3000` es únicamente para desarrollo local.
 
 El backend quedará disponible en **http://localhost:8000**:
 - 📘 Swagger UI: **http://localhost:8000/docs**
@@ -463,14 +514,16 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 ### 🔑 Autenticación — `/auth`
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/auth/register` | Registrar paciente (alias de `/register/paciente`) | ❌ |
-| POST | `/auth/register/paciente` | Registrar paciente | ❌ |
-| POST | `/auth/register/medico` | Registrar médico | ❌ |
-| POST | `/auth/register/coordinador` | Registrar coordinador | ❌ |
+| POST | `/auth/register` | Registrar paciente (alias de `/register/paciente`); **no devuelve token**, requiere verificar el email | ❌ |
+| POST | `/auth/register/paciente` | Registrar paciente; **no devuelve token**, requiere verificar el email | ❌ |
+| POST | `/auth/register/medico` | Registrar médico; **no devuelve token**, requiere verificar el email | ❌ |
+| POST | `/auth/register/coordinador` | Registrar coordinador (devuelve token, sin verificación) | ❌ |
 | POST | `/auth/login` | Iniciar sesión (OAuth2 form) | ❌ |
 | GET | `/auth/me` | Usuario autenticado actual | ✅ |
 | POST | `/auth/forgot-password` | Solicitar recuperación de contraseña | ❌ |
 | POST | `/auth/reset-password` | Restablecer contraseña con token | ❌ |
+| POST | `/auth/verify-email` | Verificar la cuenta con el token del correo | ❌ |
+| POST | `/auth/resend-verification` | Reenviar el correo de verificación | ❌ |
 
 ### 🧑 Pacientes — `/pacientes`
 | Método | Endpoint | Descripción | Auth |

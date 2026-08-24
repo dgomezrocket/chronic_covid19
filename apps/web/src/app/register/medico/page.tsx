@@ -1,20 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Link from 'next/link';
 import { apiClient } from '@chronic-covid19/api-client';
 import { registerMedicoSchema, RegisterMedicoFormData } from '@chronic-covid19/api-client/dist/validation';
-import { useAuthStore } from '@/store/authStore';
-import { RolEnum, type Especialidad } from '@chronic-covid19/shared-types';
+import { type Especialidad } from '@chronic-covid19/shared-types';
 
 export default function RegisterMedicoPage() {
-  const router = useRouter();
-  const { login } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // F04: tras registrarse no hay sesión, se muestra el aviso de "Revisá tu correo".
+  const [registrado, setRegistrado] = useState<{ email: string; message: string } | null>(null);
+  const [reenviando, setReenviando] = useState(false);
+  const [reenvioMensaje, setReenvioMensaje] = useState('');
   const [especialidades, setEspecialidades] = useState<Especialidad[]>([]);
   const [especialidadesSeleccionadas, setEspecialidadesSeleccionadas] = useState<number[]>([]);
   const [loadingEspecialidades, setLoadingEspecialidades] = useState(true);
@@ -73,19 +73,8 @@ export default function RegisterMedicoPage() {
 
       console.log('✅ Médico registrado exitosamente:', response);
 
-      const userInfo = await apiClient.getMe();
-
-      login({
-        user: {
-          id: userInfo.id,
-          email: userInfo.email,
-          nombre: userInfo.nombre,
-          rol: RolEnum.MEDICO,
-        },
-        token: response.access_token,
-      });
-
-      router.push('/dashboard');
+      // F04: no hay auto-login. La cuenta queda pendiente de verificar el email.
+      setRegistrado({ email: response.email, message: response.message });
     } catch (err) {
       console.error('❌ Error en registro:', err);
       setError(err instanceof Error ? err.message : 'Error al registrar médico');
@@ -93,6 +82,83 @@ export default function RegisterMedicoPage() {
       setLoading(false);
     }
   };
+
+  const onReenviar = async () => {
+    if (!registrado) return;
+    setReenviando(true);
+    setReenvioMensaje('');
+    try {
+      const res = await apiClient.resendVerification(registrado.email);
+      setReenvioMensaje(res.message);
+    } catch (err) {
+      setReenvioMensaje(
+        err instanceof Error ? err.message : 'No pudimos reenviar el correo. Intentá de nuevo.'
+      );
+    } finally {
+      setReenviando(false);
+    }
+  };
+
+  if (registrado) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-2xl">
+                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Revisá tu correo 📬</h2>
+            <p className="text-gray-600">Falta un paso para activar tu cuenta</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6 border border-gray-100">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-gray-600">
+                Creamos tu cuenta correctamente. Te enviamos un enlace a{' '}
+                <span className="font-semibold text-gray-900">{registrado.email}</span> para verificar
+                tu dirección de correo electrónico.
+              </p>
+              <p className="mt-3 text-gray-600">
+                Debés verificarla antes de iniciar sesión. Revisá también tu carpeta de spam.
+              </p>
+            </div>
+
+            {reenvioMensaje && (
+              <div className="rounded-xl bg-green-50 border border-green-200 p-4 text-sm text-green-800">
+                {reenvioMensaje}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Link
+                href="/login"
+                className="block w-full text-center bg-green-600 text-white px-4 py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
+              >
+                Ir a iniciar sesión
+              </Link>
+              <button
+                type="button"
+                onClick={onReenviar}
+                disabled={reenviando}
+                className="block w-full text-center bg-white text-green-700 border-2 border-green-200 px-4 py-3 rounded-xl font-semibold hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {reenviando ? 'Enviando...' : 'Reenviar correo de verificación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">

@@ -84,6 +84,7 @@ def crear_medico(
     especialidades: Optional[List[Especialidad]] = None,
     hospitales: Optional[List[Hospital]] = None,
     debe_cambiar_password: bool = False,
+    email_verificado: bool = True,
     commit: bool = True,
 ) -> Medico:
     """
@@ -93,6 +94,8 @@ def crear_medico(
     - Hashea la contraseña con el mecanismo actual (`get_password_hash`).
     - Asocia especialidades y hospitales (relaciones many-to-many) ya resueltos.
     - Si `commit=False`, hace `flush` pero deja el commit al caller (útil para importación).
+    - `email_verificado=False` SOLO en el auto-registro público (F04); el default `True`
+      mantiene el flujo de la importación masiva y de cualquier alta administrativa.
 
     Lanza `MedicoValidationError` ante datos inválidos/duplicados.
     """
@@ -116,6 +119,7 @@ def crear_medico(
         hashed_password=get_password_hash(password),
         rol=RolEnum.medico,
         debe_cambiar_password=debe_cambiar_password,
+        email_verificado=email_verificado,
     )
 
     db.add(nuevo_medico)

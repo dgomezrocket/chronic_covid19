@@ -10,8 +10,7 @@ import {
 } from '@chronic-covid19/api-client';
 import type { RegisterPacienteData } from '@chronic-covid19/shared-types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { registrarPaciente, RolNoPermitidoError } from '../../src/lib/auth';
-import { useAuthStore } from '../../src/store/authStore';
+import { registrarPaciente } from '../../src/lib/auth';
 import { mensajeDeError } from '../../src/lib/errors';
 import { GeneroSelector } from '../../src/components/GeneroSelector';
 import { DateField } from '../../src/components/DateField';
@@ -60,11 +59,12 @@ export default function Register() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const setSession = useAuthStore((s) => s.setSession);
 
   const [enviando, setEnviando] = useState(false);
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [coords, setCoords] = useState<Coordenadas | null>(null);
+  // F04: el registro ya no abre sesión; hay que verificar el correo primero.
+  const [registrado, setRegistrado] = useState<string | null>(null);
 
   const {
     control,
@@ -100,19 +100,45 @@ export default function Register() {
         latitud: coords?.latitud,
         longitud: coords?.longitud,
       };
-      const sesion = await registrarPaciente(payload);
-      await setSession(sesion);
-      // El gate de sesión redirige automáticamente a las tabs.
+      const res = await registrarPaciente(payload);
+      // No hay sesión: la cuenta queda pendiente de verificar el email.
+      setRegistrado(res.email);
     } catch (e) {
-      if (e instanceof RolNoPermitidoError) {
-        setErrorGeneral(e.message);
-      } else {
-        setErrorGeneral(mensajeDeError(e, 'No pudimos crear tu cuenta. Revisá los datos.'));
-      }
+      setErrorGeneral(mensajeDeError(e, 'No pudimos crear tu cuenta. Revisá los datos.'));
     } finally {
       setEnviando(false);
     }
   };
+
+  if (registrado) {
+    return (
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 },
+        ]}
+      >
+        <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
+          Revisá tu correo
+        </Text>
+        <Text variant="bodyMedium" style={styles.aviso}>
+          Creamos tu cuenta correctamente. Te enviamos un enlace a {registrado} para verificar tu
+          dirección de correo electrónico.
+        </Text>
+        <Text variant="bodyMedium" style={styles.aviso}>
+          Revisá tu correo para verificar tu cuenta antes de iniciar sesión.
+        </Text>
+        <Button
+          mode="contained"
+          onPress={() => router.replace('/(auth)/login')}
+          style={styles.button}
+          contentStyle={styles.buttonContent}
+        >
+          Ir a iniciar sesión
+        </Button>
+      </ScrollView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -201,6 +227,7 @@ const styles = StyleSheet.create({
   divider: { marginVertical: 16 },
   seccion: { marginBottom: 8 },
   errorGeneral: { textAlign: 'center' },
+  aviso: { textAlign: 'center', marginBottom: 12 },
   button: { borderRadius: 12, marginTop: 16 },
   buttonContent: { paddingVertical: 6 },
 });
