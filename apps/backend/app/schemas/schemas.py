@@ -2,7 +2,7 @@
 # IMPORTS
 # ================================================================
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict
 from datetime import date, datetime
 from enum import Enum
@@ -40,9 +40,41 @@ class HospitalBase(BaseModel):
     longitud: Optional[float] = None
 
 class HospitalCreate(HospitalBase):
-    pass
+    """
+    Alta de hospital: todos los datos del hospital son obligatorios.
+
+    La obligatoriedad se garantiza a nivel de API/formulario/importación. No se
+    modifica la estructura de la base de datos ni los registros históricos, por lo
+    que `HospitalBase`/`HospitalOut` siguen aceptando valores nulos al leer.
+    """
+    nombre: str = Field(..., min_length=1)
+    codigo: str = Field(..., min_length=1)
+    ciudad: str = Field(..., min_length=1)
+    departamento: str = Field(..., min_length=1)
+    barrio: str = Field(..., min_length=1)
+    direccion: str = Field(..., min_length=1)
+    telefono: str = Field(..., min_length=1)
+    latitud: float = Field(..., ge=-90, le=90)
+    longitud: float = Field(..., ge=-180, le=180)
+
+    @field_validator(
+        "nombre", "codigo", "ciudad", "departamento", "barrio", "direccion", "telefono"
+    )
+    @classmethod
+    def _texto_obligatorio(cls, v: str) -> str:
+        """Limpia espacios y rechaza cadenas vacías."""
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Este campo es obligatorio")
+        return v
 
 class HospitalUpdate(BaseModel):
+    """
+    Edición parcial de hospital. Los campos son opcionales para no romper las
+    actualizaciones parciales existentes, pero si se envían no pueden quedar vacíos
+    y las coordenadas deben estar dentro de rango. El router verifica además que el
+    hospital quede con todos los datos obligatorios completos al guardar.
+    """
     nombre: Optional[str] = None
     codigo: Optional[str] = None
     ciudad: Optional[str] = None
@@ -50,8 +82,21 @@ class HospitalUpdate(BaseModel):
     barrio: Optional[str] = None
     direccion: Optional[str] = None
     telefono: Optional[str] = None
-    latitud: Optional[float] = None
-    longitud: Optional[float] = None
+    latitud: Optional[float] = Field(None, ge=-90, le=90)
+    longitud: Optional[float] = Field(None, ge=-180, le=180)
+
+    @field_validator(
+        "nombre", "codigo", "ciudad", "departamento", "barrio", "direccion", "telefono"
+    )
+    @classmethod
+    def _texto_no_vacio(cls, v: Optional[str]) -> Optional[str]:
+        """Limpia espacios y rechaza cadenas vacías cuando el campo se envía."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Este campo no puede quedar vacío")
+        return v
 
 class HospitalOut(HospitalBase):
     id: int
@@ -440,10 +485,42 @@ class HospitalBase(BaseModel):
 
 
 class HospitalCreate(HospitalBase):
-    pass
+    """
+    Alta de hospital: todos los datos del hospital son obligatorios.
+
+    La obligatoriedad se garantiza a nivel de API/formulario/importación. No se
+    modifica la estructura de la base de datos ni los registros históricos, por lo
+    que `HospitalBase`/`HospitalOut` siguen aceptando valores nulos al leer.
+    """
+    nombre: str = Field(..., min_length=1)
+    codigo: str = Field(..., min_length=1)
+    ciudad: str = Field(..., min_length=1)
+    departamento: str = Field(..., min_length=1)
+    barrio: str = Field(..., min_length=1)
+    direccion: str = Field(..., min_length=1)
+    telefono: str = Field(..., min_length=1)
+    latitud: float = Field(..., ge=-90, le=90)
+    longitud: float = Field(..., ge=-180, le=180)
+
+    @field_validator(
+        "nombre", "codigo", "ciudad", "departamento", "barrio", "direccion", "telefono"
+    )
+    @classmethod
+    def _texto_obligatorio(cls, v: str) -> str:
+        """Limpia espacios y rechaza cadenas vacías."""
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Este campo es obligatorio")
+        return v
 
 
 class HospitalUpdate(BaseModel):
+    """
+    Edición parcial de hospital. Los campos son opcionales para no romper las
+    actualizaciones parciales existentes, pero si se envían no pueden quedar vacíos
+    y las coordenadas deben estar dentro de rango. El router verifica además que el
+    hospital quede con todos los datos obligatorios completos al guardar.
+    """
     nombre: Optional[str] = None
     codigo: Optional[str] = None
     ciudad: Optional[str] = None
@@ -451,8 +528,21 @@ class HospitalUpdate(BaseModel):
     barrio: Optional[str] = None
     direccion: Optional[str] = None
     telefono: Optional[str] = None
-    latitud: Optional[float] = None
-    longitud: Optional[float] = None
+    latitud: Optional[float] = Field(None, ge=-90, le=90)
+    longitud: Optional[float] = Field(None, ge=-180, le=180)
+
+    @field_validator(
+        "nombre", "codigo", "ciudad", "departamento", "barrio", "direccion", "telefono"
+    )
+    @classmethod
+    def _texto_no_vacio(cls, v: Optional[str]) -> Optional[str]:
+        """Limpia espacios y rechaza cadenas vacías cuando el campo se envía."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Este campo no puede quedar vacío")
+        return v
 
 
 class HospitalOut(HospitalBase):
@@ -1152,3 +1242,28 @@ class MedicoImportResult(BaseModel):
     correos_enviados: int
     correos_con_error: int
     errores: List[MedicoImportErrorRow] = []
+
+
+# ================================================================
+# IMPORTACIÓN MASIVA DE HOSPITALES
+# ================================================================
+
+class HospitalImportErrorRow(BaseModel):
+    """Fila del Excel que no pudo importarse."""
+    fila: int
+    hospital: Optional[str] = None
+    resultado: str
+
+
+class HospitalImportResult(BaseModel):
+    """
+    Resumen del resultado de una importación masiva de hospitales.
+
+    `importados` y `total_errores` se mantienen para preservar el contrato previo
+    del endpoint CSV.
+    """
+    procesados: int
+    importados: int
+    con_error: int
+    errores: List[HospitalImportErrorRow] = []
+    total_errores: int = 0

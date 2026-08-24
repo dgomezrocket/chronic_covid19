@@ -15,6 +15,7 @@ import {
   Hospital,
   HospitalCreate,
   HospitalUpdate,
+  HospitalImportResult,
   Admin,
   AdminCreate,
   AdminUpdate,
@@ -427,21 +428,59 @@ clearToken() {
     }
   }
 
-  async importHospitalesCSV(file: File): Promise<{ importados: number; errores: string[] | null; total_errores: number }> {
+  // ========== IMPORTACIÓN / EXPORTACIÓN DE HOSPITALES (Admin) ==========
+
+  /**
+   * Importa hospitales desde un archivo Excel `.xlsx` (formato principal).
+   * El backend también acepta `.csv` por compatibilidad.
+   */
+  async importarHospitales(file: File): Promise<HospitalImportResult> {
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await this.client.post<{ importados: number; errores: string[] | null; total_errores: number }>(
+      const response = await this.client.post<HospitalImportResult>(
         '/hospitales/import',
         formData,
         {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
+          headers: { 'Content-Type': 'multipart/form-data' },
+          // Una importación masiva puede superar el timeout global (10s)
+          timeout: 120000,
         }
       );
       return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * @deprecated Usa `importarHospitales(file)`. Se mantiene por compatibilidad y
+   * delega en el mismo endpoint `POST /hospitales/import`.
+   */
+  async importHospitalesCSV(file: File): Promise<HospitalImportResult> {
+    return this.importarHospitales(file);
+  }
+
+  /** Descarga la plantilla `.xlsx` (Blob) para la importación de hospitales. */
+  async descargarPlantillaHospitales(): Promise<Blob> {
+    try {
+      const response = await this.client.get('/hospitales/plantilla', {
+        responseType: 'blob',
+      });
+      return response.data as Blob;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Exporta a `.xlsx` (Blob) todos los hospitales del sistema. */
+  async exportarHospitales(): Promise<Blob> {
+    try {
+      const response = await this.client.get('/hospitales/exportar', {
+        responseType: 'blob',
+      });
+      return response.data as Blob;
     } catch (error) {
       throw this.handleError(error);
     }

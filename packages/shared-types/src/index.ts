@@ -223,16 +223,21 @@ export interface Hospital {
   longitud?: number;
 }
 
+/**
+ * Alta de hospital: todos los datos del hospital son obligatorios.
+ * `Hospital` (lectura) mantiene los campos opcionales porque pueden existir
+ * registros históricos incompletos.
+ */
 export interface HospitalCreate {
   nombre: string;
-  codigo?: string;
-  ciudad?: string;
-  departamento?: string;
-  barrio?: string;
-  direccion?: string;
-  telefono?: string;
-  latitud?: number;
-  longitud?: number;
+  codigo: string;
+  ciudad: string;
+  departamento: string;
+  barrio: string;
+  direccion: string;
+  telefono: string;
+  latitud: number;
+  longitud: number;
 }
 
 export interface HospitalUpdate {
@@ -245,6 +250,22 @@ export interface HospitalUpdate {
   telefono?: string;
   latitud?: number;
   longitud?: number;
+}
+
+// ========== IMPORTACIÓN MASIVA DE HOSPITALES ==========
+export interface HospitalImportErrorRow {
+  fila: number;
+  hospital?: string;
+  resultado: string;
+}
+
+export interface HospitalImportResult {
+  procesados: number;
+  importados: number;
+  con_error: number;
+  errores: HospitalImportErrorRow[];
+  /** Se mantiene por compatibilidad con el contrato previo del endpoint CSV. */
+  total_errores: number;
 }
 
 // ========== TIPOS PARA ADMINISTRADORES ==========

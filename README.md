@@ -75,7 +75,7 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - **Paciente** → app mobile/portal web: perfil, formularios asignados, hospitales cercanos y chat con su médico.
 - **Médico** → portal web: pacientes asignados, creación/asignación de formularios, revisión de respuestas y chat.
 - **Coordinador** → portal web: gestión del hospital, asignación médico–paciente e importación masiva de médicos.
-- **Administrador** → portal web: gestión de hospitales, coordinadores, especialidades y otros administradores (con invitaciones por correo).
+- **Administrador** → portal web: gestión e importación/exportación de hospitales, coordinadores, especialidades y otros administradores (con invitaciones por correo).
 
 ### 🔐 Autenticación y Seguridad
 - **JWT (JSON Web Tokens)** para autenticación stateless (OAuth2 password flow).
@@ -110,6 +110,44 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - Los coordinadores importan médicos desde un archivo **Excel (.xlsx)**.
 - Generación de contraseñas temporales y envío de correos de bienvenida (SMTP).
 - Plantilla descargable y exportación del padrón de médicos del hospital.
+
+### 🏥 Gestión e Importación/Exportación de Hospitales
+Desde `/dashboard/admin/hospitales` el **administrador** puede:
+
+- **Gestionar hospitales individualmente**: crear, consultar (con filtros por nombre,
+  departamento y ciudad), editar y eliminar.
+- **Importar hospitales masivamente** desde un archivo **Excel (.xlsx)**.
+- **Descargar una plantilla Excel** (`plantilla_hospitales.xlsx`) con los encabezados
+  esperados, una fila de ejemplo y una hoja de *Instrucciones*.
+- **Exportar todos los hospitales** a `hospitales.xlsx` (se consulta la base completa,
+  sin la paginación del listado).
+
+`.xlsx` es el **formato principal de intercambio**; `POST /hospitales/import` mantiene el
+soporte de `.csv` del comportamiento anterior.
+
+**Formato del Excel** — una fila por hospital, **todos los campos obligatorios**:
+
+| Nombre | Código | Departamento | Ciudad | Barrio | Dirección | Teléfono | Latitud | Longitud |
+|--------|--------|--------------|--------|--------|-----------|----------|---------|----------|
+| Hospital General de Luque | HGL-001 | Central | Luque | Centro | Av. Humaitá 123 | 021123456 | -25.2678 | -57.4872 |
+
+**Validaciones de la importación:**
+- Todos los campos son obligatorios; una cadena vacía no es un valor válido y los espacios
+  al inicio/final se limpian.
+- El `Código` debe ser único (en el sistema y dentro del archivo). **No hay actualización
+  automática (*upsert*)**: si el código ya existe, la fila se reporta y el proceso continúa.
+- `Latitud` debe ser numérica entre `-90` y `90`; `Longitud` entre `-180` y `180`.
+- Las filas completamente vacías se ignoran y **una fila con error no impide procesar las
+  demás**.
+- El resultado informa `procesados`, `importados`, `con_error` y el detalle de errores
+  (fila, hospital y motivo), p. ej. `Fila 5 — Hospital Regional X — Faltan campos
+  obligatorios: Teléfono, Latitud`.
+
+> Los mismos campos son obligatorios en la **creación manual** (formulario web + API). La
+> latitud/longitud provienen del Excel o del selector de ubicación en el mapa (Leaflet); no
+> se usa geocodificación automática para completarlas. Los registros históricos con campos
+> vacíos no se modifican, pero al **editar** un hospital debe quedar con todos los datos
+> obligatorios completos.
 
 ---
 
@@ -159,7 +197,7 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - **python-jose / PyJWT** — Autenticación con JWT
 - **passlib + bcrypt** — Hash de contraseñas
 - **WebSockets** (nativos de Starlette) — Chat en tiempo real
-- **openpyxl** — Importación/exportación de médicos en Excel
+- **openpyxl** — Importación/exportación de médicos y hospitales en Excel
 - **SMTP (stdlib)** — Envío de correos (recuperación de contraseña, alta de médicos)
 
 ### 🌐 Frontend Web (`apps/web`)
@@ -442,7 +480,14 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 | POST | `/hospitales/` | Crear hospital | 🛡️ Admin |
 | PUT | `/hospitales/{id}` | Actualizar hospital | 🛡️ Admin |
 | DELETE | `/hospitales/{id}` | Eliminar hospital | 🛡️ Admin |
-| POST | `/hospitales/import` | Importar hospitales desde CSV | 🛡️ Admin |
+| POST | `/hospitales/import` | Importar hospitales desde Excel | 🛡️ Admin |
+| GET | `/hospitales/plantilla` | Descargar plantilla Excel | 🛡️ Admin |
+| GET | `/hospitales/exportar` | Exportar hospitales a Excel | 🛡️ Admin |
+
+> `POST /hospitales/import` acepta `.xlsx` (formato principal) y conserva el soporte de
+> `.csv` del comportamiento anterior. `/hospitales/plantilla` y `/hospitales/exportar` se
+> declaran antes de `/hospitales/{id}` para que FastAPI no interprete `plantilla`/`exportar`
+> como un `hospital_id`.
 
 ### 📋 Formularios — `/formularios`
 | Método | Endpoint | Descripción | Auth |
