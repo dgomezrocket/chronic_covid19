@@ -6,8 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { apiClient } from '@chronic-covid19/api-client';
-import { resetPasswordSchema } from '@chronic-covid19/api-client/dist/validation';
+import { apiClient, resetPasswordSchema } from '@chronic-covid19/api-client';
 
 // Se reutiliza el esquema compartido y se agrega la confirmación (solo UI).
 const formSchema = resetPasswordSchema

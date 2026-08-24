@@ -84,6 +84,31 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 - Recuperación de contraseña por correo con **token de un solo uso y expiración**.
 - **Validación de datos** con Pydantic (backend) y Zod (frontend/mobile).
 
+#### 🔑 Recuperación de contraseña (Web y Mobile)
+
+Disponible para pacientes, médicos, coordinadores y administradores. Ambas plataformas
+comparten los mismos endpoints y el **mismo token**:
+
+| Método | Endpoint | Uso |
+|--------|----------|-----|
+| POST | `/auth/forgot-password` | Solicitar el código/enlace (recibe `email`) |
+| POST | `/auth/reset-password` | Definir la nueva contraseña (recibe `token` y `new_password`) |
+
+**Flujo web:**
+
+```
+/login  →  ¿Olvidaste tu contraseña?  →  /forgot-password  →  correo
+        →  /reset-password?token=…    →  contraseña actualizada  →  /login
+```
+
+El correo incluye **un código y un enlace**. El enlace se arma con `FRONTEND_URL`
+(`{FRONTEND_URL}/reset-password?token=…`), por lo que `/reset-password` detecta el token
+automáticamente. Si se entra a `/reset-password` sin token en la URL, se puede pegar el
+código a mano — el mismo que se usa en la app mobile (pantallas `recuperar` → `restablecer`).
+
+> 🔒 La respuesta de `/auth/forgot-password` es **siempre genérica**, exista o no el email,
+> para no revelar qué cuentas están registradas.
+
 ### 🛡️ Gestión de Administradores
 - Alta de administradores por **invitación por correo**: nadie necesita compartir contraseñas ni cargarlas a mano.
 - Flujo completo:
@@ -313,7 +338,7 @@ POSTGRES_DB=chronic_covid19
 POSTGRES_SERVER=localhost          # 'db' si se usa Docker
 SECRET_KEY=cambia-esto-por-una-clave-larga-y-aleatoria
 PROJECT_NAME=Chronic COVID-19 Monitoring System
-FRONTEND_URL=http://localhost:3000 # usado en los enlaces de los correos
+FRONTEND_URL=http://localhost:3000 # solo para desarrollo; ver nota abajo
 
 # SMTP (opcional: si está vacío, el envío de correos se omite sin romper nada)
 SMTP_HOST=
@@ -329,6 +354,12 @@ ADMIN_INVITATION_TOKEN_EXPIRE_HOURS=48   # validez del enlace de invitación de 
 
 > 💡 Si el bloque SMTP queda vacío, las **invitaciones de administrador se crean igual pero el correo no se
 > envía** (el envío se omite sin cortar la operación). En desarrollo, tomá el enlace de los logs del backend.
+> Lo mismo aplica a la recuperación de contraseña: la respuesta sigue siendo genérica aunque el correo no salga.
+
+> ⚠️ **`FRONTEND_URL` en producción** debe ser el dominio público de la web
+> (`https://www.saludenmapa.com`), porque de ahí salen los enlaces de recuperación de contraseña
+> y de invitación de administradores. El valor por defecto en el código ya es ese dominio
+> (`app/core/config.py`); `http://localhost:3000` es únicamente para desarrollo local.
 
 El backend quedará disponible en **http://localhost:8000**:
 - 📘 Swagger UI: **http://localhost:8000/docs**
