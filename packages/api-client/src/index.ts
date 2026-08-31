@@ -55,6 +55,35 @@ import {
   WebSocketTokenResponse,
 } from '@chronic-covid19/shared-types';
 
+/**
+ * Error de una llamada al API. Además del mensaje legible expone `status` y `detail`
+ * para que la UI pueda distinguir "el servidor respondió y rechazó la operación" de
+ * "no hubo respuesta", sin tener que adivinarlo del texto del mensaje.
+ */
+export class ApiRequestError extends Error {
+  /** Código HTTP; `undefined` solo cuando no hubo respuesta (red / timeout). */
+  readonly status?: number;
+  /** `detail` que envió el backend, si vino como texto. Ya está en español y es apto para mostrar. */
+  readonly detail?: string;
+
+  constructor(message: string, options: { status?: number; detail?: string } = {}) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = options.status;
+    this.detail = options.detail;
+  }
+}
+
+/** Mensajes por defecto cuando el backend responde un error sin `detail` legible. */
+function mensajePorEstado(status: number): string {
+  if (status === 401) return 'Tus credenciales no son válidas o la sesión expiró.';
+  if (status === 403) return 'No tenés permiso para realizar esta acción.';
+  if (status === 404) return 'No encontramos lo que buscabas.';
+  if (status === 409) return 'Los datos entran en conflicto con información ya existente.';
+  if (status >= 500) return 'El servidor tuvo un problema al procesar la solicitud.';
+  return 'No pudimos completar la operación. Revisá los datos e intentá de nuevo.';
+}
+
 export class ApiClient {
   private client: AxiosInstance;
   private token: string | null = null;
@@ -1480,22 +1509,28 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   private handleError(error: unknown): Error {
     if (axios.isAxiosError(error)) {
       const axiosError = error as AxiosError<ApiError>;
+      const response = axiosError.response;
 
-      if (!axiosError.response) {
+      if (!response) {
         if (axiosError.code === 'ECONNREFUSED') {
-          return new Error('No se puede conectar al servidor. Verifica que el backend esté corriendo en http://localhost:8000');
+          return new ApiRequestError('No se puede conectar al servidor. Verifica que el backend esté corriendo en http://localhost:8000');
         }
         if (axiosError.code === 'ERR_NETWORK') {
-          return new Error('Error de red. Verifica tu conexión y que el backend esté corriendo.');
+          return new ApiRequestError('Error de red. Verifica tu conexión y que el backend esté corriendo.');
         }
-        return new Error(`Error de conexión: ${axiosError.message}`);
+        return new ApiRequestError(`Error de conexión: ${axiosError.message}`);
       }
 
-      if (axiosError.response?.data?.detail) {
-        return new Error(axiosError.response.data.detail);
-      }
+      // Hubo respuesta: el mensaje sale del `detail` del backend (ya viene en español y
+      // apto para el usuario). Solo se usa cuando es texto: en un 422 de FastAPI `detail`
+      // es un array de errores de validación y `new Error(array)` daría un mensaje ilegible.
+      const detail =
+        typeof response.data?.detail === 'string' ? response.data.detail : undefined;
 
-      return new Error(axiosError.message);
+      return new ApiRequestError(detail ?? mensajePorEstado(response.status), {
+        status: response.status,
+        detail,
+      });
     }
     return error instanceof Error ? error : new Error('Error desconocido');
   }

@@ -35,6 +35,40 @@ _MODELOS_POR_ROL = [
     ("admin", Admin),
 ]
 
+# Mensajes de email duplicado en el alta. Son los que ve el usuario final, así que
+# nombran el problema concreto en vez de un genérico "El email ya está registrado".
+_MENSAJE_EMAIL_EN_USO = (
+    "El correo electrónico ya está siendo utilizado por un usuario del sistema."
+)
+_MENSAJE_EMAIL_EN_USO_SIN_VERIFICAR = (
+    "El correo electrónico ya está siendo utilizado por un usuario del sistema y todavía "
+    "no fue verificado. Revisá tu bandeja de entrada o pedí un nuevo enlace de verificación."
+)
+
+
+def _validar_email_disponible(db: Session, email: str) -> None:
+    """
+    Rechaza el alta si el email ya pertenece a CUALQUIER cuenta del sistema.
+
+    Busca en las 4 tablas de usuarios y sin distinguir mayúsculas, porque el email es la
+    credencial de login y `/auth/login` las recorre todas: si el mismo correo existiera en
+    dos tablas, el login quedaría ambiguo. Antes cada endpoint miraba solo la tabla del rol
+    que estaba creando, así que un paciente podía registrarse con el email de un médico.
+
+    Si la cuenta existente sigue pendiente de verificar, el mensaje lo aclara para que el
+    usuario sepa que puede reenviarse el enlace en vez de probar con otro correo.
+    """
+    _, user = _buscar_cuenta_por_email_ci(db, email)
+    if not user:
+        return
+
+    detail = (
+        _MENSAJE_EMAIL_EN_USO
+        if getattr(user, "email_verificado", True)
+        else _MENSAJE_EMAIL_EN_USO_SIN_VERIFICAR
+    )
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
 
 # ========== REGISTRO DE USUARIOS ==========
 
@@ -55,13 +89,8 @@ def register_paciente(
     access_token. El paciente recibe un correo con un enlace de verificación y solo
     puede iniciar sesión después de usarlo.
     """
-    # Verificar si el email ya existe
-    existing_email = db.query(Paciente).filter(Paciente.email == paciente.email).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El email ya está registrado"
-        )
+    # Verificar si el email ya existe (en cualquier tabla de usuarios)
+    _validar_email_disponible(db, str(paciente.email))
 
     # Verificar si el documento ya existe
     existing_doc = db.query(Paciente).filter(Paciente.documento == paciente.documento).first()
@@ -132,6 +161,10 @@ def register_medico(
     pasan por acá y siguen quedando verificados (ver `crear_medico`).
     """
     from app.services.medico_service import crear_medico, MedicoValidationError
+
+    # Email duplicado primero: es el error más frecuente y `crear_medico` solo mira las
+    # tablas de médicos y pacientes, con un mensaje genérico.
+    _validar_email_disponible(db, str(medico.email))
 
     # Verificar que las especialidades existan (por ID, solo activas)
     especialidades = []
