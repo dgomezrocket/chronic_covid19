@@ -110,6 +110,22 @@ código a mano — el mismo que se usa en la app mobile (pantallas `recuperar` �
 > 🔒 La respuesta de `/auth/forgot-password` es **siempre genérica**, exista o no el email,
 > para no revelar qué cuentas están registradas.
 
+#### 🔐 Cambio de contraseña con sesión activa (Web y Mobile)
+
+Flujo distinto al de recuperación: acá el usuario **ya está autenticado** y la petición viaja
+con el token. Disponible para los cuatro roles a través de `POST /auth/me/cambiar-password`,
+que resuelve la tabla del usuario a partir del rol del token (nunca de un id enviado por el
+cliente). En el caso del médico, además limpia la marca `debe_cambiar_password` que dejan las
+contraseñas temporales de la importación masiva.
+
+| Plataforma | Dónde | Acceso |
+|------------|-------|--------|
+| Web | `/dashboard/cambiar-password` | Botón **Cambiar Contraseña** en `/dashboard/profile`, y el aviso de contraseña temporal del dashboard (solo médicos importados) |
+| Mobile | Pestaña **Datos** → tarjeta *Seguridad* | Paciente |
+
+`POST /medicos/me/cambiar-password` se mantiene como **alias de compatibilidad** para clientes
+ya publicados; delega en el mismo handler y sigue restringido a médicos.
+
 #### ✉️ Verificación de cuenta por correo.
 
 Los **pacientes y médicos que se autoregistran** desde la web deben verificar su correo
@@ -520,6 +536,7 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 | POST | `/auth/register/coordinador` | Registrar coordinador (devuelve token, sin verificación) | ❌ |
 | POST | `/auth/login` | Iniciar sesión (OAuth2 form) | ❌ |
 | GET | `/auth/me` | Usuario autenticado actual | ✅ |
+| POST | `/auth/me/cambiar-password` | Cambiar la propia contraseña (cualquier rol; el usuario sale del token) | ✅ |
 | POST | `/auth/forgot-password` | Solicitar recuperación de contraseña | ❌ |
 | POST | `/auth/reset-password` | Restablecer contraseña con token | ❌ |
 | POST | `/auth/verify-email` | Verificar la cuenta con el token del correo | ❌ |
@@ -538,7 +555,7 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 |--------|----------|-------------|------|
 | GET | `/medicos/` | Listar médicos | ✅ |
 | GET | `/medicos/me` | Perfil del médico autenticado | 🩺 Médico |
-| POST | `/medicos/me/cambiar-password` | Cambiar la propia contraseña | 🩺 Médico |
+| POST | `/medicos/me/cambiar-password` | Alias de compatibilidad de `/auth/me/cambiar-password` | 🩺 Médico |
 | GET | `/medicos/{id}` | Obtener médico | ✅ |
 | PUT | `/medicos/{id}` | Actualizar médico | 🩺 Propio / Admin |
 | DELETE | `/medicos/{id}` | Eliminar médico | 🛡️ Admin |

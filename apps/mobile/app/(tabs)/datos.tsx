@@ -16,6 +16,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   updatePacienteSchema,
   type UpdatePacienteFormData,
+  cambiarPasswordSchema,
+  type CambiarPasswordFormData,
 } from '@chronic-covid19/api-client';
 import type { Paciente } from '@chronic-covid19/shared-types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,6 +44,7 @@ export default function Datos() {
   const [coords, setCoords] = useState<Coordenadas | null>(null);
   const [direccionUbicacion, setDireccionUbicacion] = useState('');
   const [guardandoUbicacion, setGuardandoUbicacion] = useState(false);
+  const [cambiandoPassword, setCambiandoPassword] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
   const {
@@ -51,6 +54,17 @@ export default function Datos() {
     formState: { errors },
   } = useForm<UpdatePacienteFormData>({
     resolver: zodResolver(updatePacienteSchema),
+  });
+
+  // Form independiente del de perfil: se envía a otro endpoint y se limpia solo.
+  const {
+    control: controlPassword,
+    handleSubmit: handleSubmitPassword,
+    reset: resetPassword,
+    formState: { errors: erroresPassword },
+  } = useForm<CambiarPasswordFormData>({
+    resolver: zodResolver(cambiarPasswordSchema),
+    defaultValues: { password: '', confirmPassword: '' },
   });
 
   const seedForm = useCallback(
@@ -138,6 +152,20 @@ export default function Datos() {
       setSnackbar(mensajeDeError(e, 'No pudimos guardar la ubicación.'));
     } finally {
       setGuardandoUbicacion(false);
+    }
+  };
+
+  const onCambiarPassword = async (data: CambiarPasswordFormData) => {
+    setCambiandoPassword(true);
+    try {
+      // El backend identifica al usuario por el token: no se envía ningún id.
+      await apiClient.cambiarMiPassword(data.password);
+      resetPassword();
+      setSnackbar('Tu contraseña se actualizó correctamente.');
+    } catch (e) {
+      setSnackbar(mensajeDeError(e, 'No pudimos actualizar la contraseña.'));
+    } finally {
+      setCambiandoPassword(false);
     }
   };
 
@@ -340,6 +368,77 @@ export default function Datos() {
         </Card.Content>
       </Card>
 
+      {/* ----- Seguridad ----- */}
+      <Card mode="outlined" style={styles.card}>
+        <Card.Content>
+          <Text variant="titleMedium" style={styles.seccion}>
+            Seguridad
+          </Text>
+          <Text variant="bodySmall" style={styles.mutedTextLeft}>
+            Elegí una contraseña nueva. Se aplica a esta cuenta apenas la guardes.
+          </Text>
+
+          <Controller
+            control={controlPassword}
+            name="password"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <View style={styles.field}>
+                <TextInput
+                  mode="outlined"
+                  label="Nueva contraseña"
+                  value={value ?? ''}
+                  onChangeText={onChange}
+                  onBlur={onBlur}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  error={!!erroresPassword.password}
+                />
+                {erroresPassword.password ? (
+                  <HelperText type="error" visible>{erroresPassword.password.message}</HelperText>
+                ) : null}
+              </View>
+            )}
+          />
+
+          <Controller
+            control={controlPassword}
+            name="confirmPassword"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <View style={styles.field}>
+                <TextInput
+                  mode="outlined"
+                  label="Confirmar contraseña"
+                  value={value ?? ''}
+                  onChangeText={onChange}
+                  onBlur={onBlur}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  error={!!erroresPassword.confirmPassword}
+                />
+                {erroresPassword.confirmPassword ? (
+                  <HelperText type="error" visible>{erroresPassword.confirmPassword.message}</HelperText>
+                ) : null}
+              </View>
+            )}
+          />
+
+          <Button
+            mode="contained"
+            onPress={handleSubmitPassword(onCambiarPassword)}
+            loading={cambiandoPassword}
+            disabled={cambiandoPassword}
+            style={styles.button}
+            contentStyle={styles.buttonContent}
+          >
+            Cambiar contraseña
+          </Button>
+        </Card.Content>
+      </Card>
+
       <Divider style={styles.divider} />
 
       <Button
@@ -377,6 +476,7 @@ const styles = StyleSheet.create({
   field: { marginBottom: 2 },
   divider: { marginVertical: 4 },
   mutedText: { color: '#6b7280', textAlign: 'center' },
+  mutedTextLeft: { color: '#6b7280', marginBottom: 12 },
   button: { borderRadius: 12, marginTop: 12 },
   buttonContent: { paddingVertical: 6 },
 });

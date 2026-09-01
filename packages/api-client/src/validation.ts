@@ -23,6 +23,19 @@ export const resetPasswordSchema = z.object({
 
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 
+// ========== CAMBIO DE CONTRASEÑA (SESIÓN ACTIVA) ==========
+// Lo usan la web (/dashboard/cambiar-password) y la app móvil (pestaña Datos).
+// El mínimo de 6 caracteres es el mismo que valida el backend.
+export const cambiarPasswordSchema = z.object({
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  confirmPassword: z.string().min(6, 'Confirmá la contraseña'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmPassword'],
+});
+
+export type CambiarPasswordFormData = z.infer<typeof cambiarPasswordSchema>;
+
 // ========== VERIFICACIÓN DE EMAIL (F04) ==========
 export const verifyEmailSchema = z.object({
   token: z.string().min(1, 'Falta el código de verificación'),

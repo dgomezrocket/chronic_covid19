@@ -12,7 +12,7 @@ from app.models.models import (
 from app.schemas.schemas import (
     PacienteCreate, MedicoCreate, CoordinadorCreate,
     Token, UserInfo,
-    ForgotPasswordRequest, ResetPasswordRequest, MessageResponse,
+    ForgotPasswordRequest, ResetPasswordRequest, CambiarPasswordRequest, MessageResponse,
     RegistrationPendingVerificationResponse, VerifyEmailRequest, ResendVerificationRequest,
 )
 from app.core.security import (
@@ -512,6 +512,64 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Tu contraseña fue actualizada correctamente. Ya podés iniciar sesión."}
+
+
+# ========== CAMBIO DE CONTRASEÑA (SESIÓN ACTIVA) ==========
+
+# Longitud mínima. Es el mismo valor que valida el frontend (`cambiarPasswordSchema`)
+# y que exige `reset_password`, así que el mensaje de error también es el mismo.
+PASSWORD_MIN_LENGTH = 6
+
+
+def cambiar_password_usuario_actual(
+    payload: CambiarPasswordRequest,
+    db: Session,
+    current_user: dict,
+) -> dict:
+    """
+    Cambia la contraseña del usuario autenticado, sea cual sea su rol.
+
+    El usuario se deriva SIEMPRE del token (`current_user`), nunca de un id enviado
+    por el cliente. La tabla se resuelve con `_modelo_por_rol`, el mismo helper que
+    usa `reset_password`, así que los cuatro roles (paciente, médico, coordinador y
+    admin) comparten una única implementación.
+    """
+    nueva = (payload.password or "").strip()
+    if len(nueva) < PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La contraseña debe tener al menos {PASSWORD_MIN_LENGTH} caracteres.",
+        )
+
+    modelo = _modelo_por_rol(current_user["rol"])
+    user = db.query(modelo).filter(modelo.id == current_user["id"]).first() if modelo else None
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+
+    user.hashed_password = get_password_hash(nueva)
+
+    # `debe_cambiar_password` solo existe en Medico (contraseñas temporales de la
+    # importación masiva); los demás modelos no tienen la columna.
+    if hasattr(user, "debe_cambiar_password"):
+        user.debe_cambiar_password = False
+
+    db.commit()
+
+    return {"message": "Contraseña actualizada correctamente"}
+
+
+@router.post("/me/cambiar-password", response_model=MessageResponse)
+def cambiar_mi_password(
+    payload: CambiarPasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Permite a cualquier usuario autenticado cambiar su propia contraseña."""
+    return cambiar_password_usuario_actual(payload, db, current_user)
+
 
 # ========== VERIFICACIÓN DE EMAIL (F04) ==========
 # Estos helpers se definen al final del archivo aunque los registros de más arriba los

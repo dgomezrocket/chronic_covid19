@@ -614,11 +614,15 @@ clearToken() {
     }
   }
 
-  /** Cambia la contraseña del médico autenticado (limpia la marca de contraseña temporal). */
+  /**
+   * Cambia la contraseña del usuario autenticado, sea cual sea su rol.
+   * El backend lo identifica por el token; en el caso del médico además limpia la
+   * marca de contraseña temporal (`debe_cambiar_password`).
+   */
   async cambiarMiPassword(password: string): Promise<{ message: string }> {
     try {
       const response = await this.client.post<{ message: string }>(
-        '/medicos/me/cambiar-password',
+        '/auth/me/cambiar-password',
         { password }
       );
       return response.data;

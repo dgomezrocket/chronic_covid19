@@ -2,28 +2,38 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { apiClient } from '@chronic-covid19/api-client';
-import { RolEnum } from '@chronic-covid19/shared-types';
+import {
+  cambiarPasswordSchema,
+  CambiarPasswordFormData,
+} from '@chronic-covid19/api-client/dist/validation';
 
 export default function CambiarPasswordPage() {
   const router = useRouter();
-  const { user, isAuthenticated, token, logout } = useAuthStore();
+  const { user, isAuthenticated, token, logout, updateUser } = useAuthStore();
 
-  const [password, setPassword] = useState('');
-  const [confirmacion, setConfirmacion] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CambiarPasswordFormData>({
+    resolver: zodResolver(cambiarPasswordSchema),
+  });
+
+  // La página sirve a cualquier rol autenticado: el backend identifica al usuario
+  // por el token, así que no hace falta filtrar por rol acá.
   useEffect(() => {
     if (!isAuthenticated || !user) {
       router.push('/login');
-      return;
-    }
-    if (user.rol !== RolEnum.MEDICO) {
-      router.push('/dashboard');
       return;
     }
     if (token) apiClient.setToken(token);
@@ -34,26 +44,17 @@ export default function CambiarPasswordPage() {
     router.push('/login');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: CambiarPasswordFormData) => {
     setError('');
     setSuccess('');
-
-    if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-    if (password !== confirmacion) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
-
     setSaving(true);
     try {
-      await apiClient.cambiarMiPassword(password);
+      await apiClient.cambiarMiPassword(data.password);
+      // El backend limpia la marca de contraseña temporal; replicarlo en el store
+      // apaga el aviso del dashboard sin obligar a volver a iniciar sesión.
+      updateUser({ debe_cambiar_password: false });
       setSuccess('Tu contraseña se actualizó correctamente.');
-      setPassword('');
-      setConfirmacion('');
+      reset();
       setTimeout(() => router.push('/dashboard'), 1500);
     } catch (err: any) {
       setError(err?.message || 'No se pudo actualizar la contraseña.');
@@ -123,28 +124,32 @@ export default function CambiarPasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Nueva contraseña</label>
               <input
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                {...register('password')}
                 className="input"
                 placeholder="Mínimo 6 caracteres"
                 autoComplete="new-password"
               />
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Confirmar contraseña</label>
               <input
                 type="password"
-                value={confirmacion}
-                onChange={(e) => setConfirmacion(e.target.value)}
+                {...register('confirmPassword')}
                 className="input"
                 placeholder="Repite la contraseña"
                 autoComplete="new-password"
               />
+              {errors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
+              )}
             </div>
             <button
               type="submit"

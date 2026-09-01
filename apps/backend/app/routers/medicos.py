@@ -3,48 +3,34 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.db.db import get_db
 from app.models.models import Medico, Hospital, Especialidad, RolEnum
-from app.schemas.schemas import MedicoResponse, MedicoUpdate, CambiarPasswordRequest
-from app.core.security import get_current_user, get_password_hash
+from app.schemas.schemas import MedicoResponse, MedicoUpdate, CambiarPasswordRequest, MessageResponse
+from app.core.security import get_current_user
+from app.routers.auth import cambiar_password_usuario_actual
 
 router = APIRouter()
 
 
-@router.post("/me/cambiar-password", status_code=status.HTTP_200_OK)
+@router.post("/me/cambiar-password", response_model=MessageResponse)
 def cambiar_mi_password(
         payload: CambiarPasswordRequest,
         db: Session = Depends(get_db),
         current_user: dict = Depends(get_current_user)
 ):
     """
-    Permite al médico autenticado cambiar su propia contraseña.
-    El médico se deriva del token (nunca de un id enviado por el cliente).
-    Al cambiarla, se limpia la marca `debe_cambiar_password`.
+    Alias de compatibilidad de `POST /auth/me/cambiar-password`.
+
+    Se mantiene porque las versiones ya publicadas del cliente web/móvil apuntan a
+    esta ruta. La lógica vive en `auth.cambiar_password_usuario_actual` y sirve a
+    todos los roles; acá se conserva la restricción a médicos porque es lo que
+    prometía el endpoint original.
     """
     if current_user["rol"] != "medico":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para médicos"
+            detail="Este endpoint es solo para médicos. Usá /auth/me/cambiar-password."
         )
 
-    nueva = (payload.password or "").strip()
-    if len(nueva) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La contraseña debe tener al menos 6 caracteres"
-        )
-
-    medico = db.query(Medico).filter(Medico.id == current_user["id"]).first()
-    if not medico:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Médico no encontrado"
-        )
-
-    medico.hashed_password = get_password_hash(nueva)
-    medico.debe_cambiar_password = False
-    db.commit()
-
-    return {"message": "Contraseña actualizada correctamente"}
+    return cambiar_password_usuario_actual(payload, db, current_user)
 
 
 @router.get("/", response_model=List[MedicoResponse])

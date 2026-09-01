@@ -18,6 +18,12 @@ interface AuthStore {
   isAuthenticated: boolean;
   login: (authData: { user: User; token: string }) => void;
   logout: () => void;
+  /**
+   * Aplica un cambio parcial sobre el usuario en sesión (el `persist` de zustand
+   * guarda el resultado). Se usa, por ejemplo, para apagar el aviso de contraseña
+   * temporal apenas el médico la cambia, sin obligarlo a volver a iniciar sesión.
+   */
+  updateUser: (parcial: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -35,6 +41,8 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: true,
         });
       },
+      updateUser: (parcial) =>
+        set((state) => (state.user ? { user: { ...state.user, ...parcial } } : {})),
       logout: () => {
         console.log('🔓 Logout: Limpiando token del apiClient');
         apiClient.clearToken();
