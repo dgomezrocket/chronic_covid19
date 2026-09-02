@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -41,10 +42,16 @@ def _hash_token(token: str) -> str:
 
 
 def _email_registrado(db: Session, email: str) -> bool:
-    """Indica si el email ya pertenece a una cuenta existente en cualquiera de las 4 tablas de login."""
-    email = email.lower()
+    """
+    Indica si el email ya pertenece a una cuenta existente en cualquiera de las 4 tablas
+    de login, sin distinguir mayúsculas/minúsculas.
+
+    La comparación tiene que ser insensible: pasar el input a minúsculas y después
+    compararlo exacto dejaba pasar como "libre" cualquier email guardado con mayúsculas.
+    """
+    email = email.strip().lower()
     for modelo in (Paciente, Medico, Coordinador, Admin):
-        if db.query(modelo).filter(modelo.email == email).first():
+        if db.query(modelo).filter(func.lower(modelo.email) == email).first():
             return True
     return False
 
@@ -287,8 +294,11 @@ def create_admin(
         current_user=Depends(require_admin)
 ):
     """Crea un nuevo administrador (solo admin)"""
-    # Verificar si ya existe un admin con ese email
-    existing_email = db.query(Admin).filter(Admin.email == admin.email).first()
+    # Verificar si ya existe un admin con ese email (insensible a mayúsculas: el alta
+    # de más abajo guarda el email en minúsculas).
+    existing_email = db.query(Admin).filter(
+        func.lower(Admin.email) == admin.email.strip().lower()
+    ).first()
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -348,16 +358,16 @@ def update_admin(
 
     # Verificar email duplicado si se está cambiando
     update_data = admin_update.model_dump(exclude_unset=True)
-    if "email" in update_data and update_data["email"] != admin.email:
+    if "email" in update_data and update_data["email"].strip().lower() != admin.email.lower():
         existing = db.query(Admin).filter(
-            Admin.email == update_data["email"]
+            func.lower(Admin.email) == update_data["email"].strip().lower()
         ).first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Ya existe un administrador con ese email"
             )
-        update_data["email"] = update_data["email"].lower()
+        update_data["email"] = update_data["email"].strip().lower()
 
     # Verificar documento duplicado si se está cambiando
     if "documento" in update_data and update_data["documento"] != admin.documento:

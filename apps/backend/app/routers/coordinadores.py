@@ -4,6 +4,7 @@ Gestión de coordinadores y sus operaciones
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -164,10 +165,13 @@ def update_coordinador(
             detail="Coordinador no encontrado"
         )
 
-    # Verificar si se intenta actualizar el email y si ya existe
-    if coordinador_update.email and coordinador_update.email != coordinador.email:
+    # Verificar si se intenta actualizar el email y si ya existe (sin distinguir
+    # mayúsculas: el email es la credencial de login).
+    if coordinador_update.email:
+        coordinador_update.email = str(coordinador_update.email).strip().lower()
+    if coordinador_update.email and coordinador_update.email != coordinador.email.lower():
         existing_email = db.query(Coordinador).filter(
-            Coordinador.email == coordinador_update.email,
+            func.lower(Coordinador.email) == coordinador_update.email,
             Coordinador.id != coordinador_id
         ).first()
         if existing_email:

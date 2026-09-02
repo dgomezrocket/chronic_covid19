@@ -413,11 +413,27 @@ SMTP_STARTTLS=true
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
 ADMIN_INVITATION_TOKEN_EXPIRE_HOURS=48    # validez del enlace de invitación de admin
 EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS=48  # validez del enlace de verificación de cuenta
+
+LOG_LEVEL=INFO                            # nivel de logging de la app (DEBUG para más detalle)
 ```
 
 > 💡 Si el bloque SMTP queda vacío, las **invitaciones de administrador se crean igual pero el correo no se
 > envía** (el envío se omite sin cortar la operación). En desarrollo, tomá el enlace de los logs del backend.
 > Lo mismo aplica a la recuperación de contraseña: la respuesta sigue siendo genérica aunque el correo no salga.
+
+### Diagnosticar el envío de correos
+
+Como todos los envíos capturan sus errores para no romper la operación en curso, un `200 OK` de
+`/auth/forgot-password` no dice si el correo salió. Para saberlo hay dos vías:
+
+- **`GET /auth/diagnostico-smtp`** (requiere token de administrador): informa la configuración SMTP
+  efectiva —host, puerto, usuario, remitente, STARTTLS, si hay contraseña definida; nunca la
+  contraseña— y el resultado real de conectar y autenticar contra el servidor. No envía ningún correo.
+- **Los logs del backend**, que ahora distinguen los tres casos:
+  `forgot-password: no hay ninguna cuenta con el email ...` (no se intentó enviar),
+  `SMTP no configurado: ...` (faltan variables de entorno),
+  `SMTP falló al enviar a ...` (el proveedor rechazó) y
+  `Correo enviado a ... — asunto: ...` (salió correctamente).
 
 > ⚠️ **SMTP es necesario para el autoregistro.** Los pacientes y médicos que se registran solos
 > quedan pendientes de verificar su correo, así que sin SMTP configurado la cuenta se crea pero **no puede

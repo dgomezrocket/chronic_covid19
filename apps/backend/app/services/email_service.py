@@ -10,12 +10,15 @@ Si SMTP no está configurado (SMTP_HOST o SMTP_USER vacíos), `enviar_email` lan
 de envío NO deshaga un registro que ya fue creado en la base de datos.
 """
 
+import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class EmailNoConfiguradoError(RuntimeError):
@@ -62,7 +65,17 @@ def enviar_email(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html:
     except EmailNoConfiguradoError:
         raise
     except Exception as e:  # noqa: BLE001 - queremos envolver cualquier fallo de red/SMTP
+        # Se loguea acá, con el tipo de excepción, porque los callers solo guardan el
+        # texto: sin esto un rechazo del proveedor y un timeout de red son indistinguibles.
+        logger.error(
+            "SMTP falló al enviar a %s vía %s:%s (%s): %s",
+            destinatario, settings.SMTP_HOST, settings.SMTP_PORT, type(e).__name__, e,
+        )
         raise EmailEnvioError(str(e)) from e
+
+    # Un envío exitoso también deja rastro: es la única forma de distinguir en los logs
+    # "no se intentó enviar" de "se envió y no llegó a la bandeja".
+    logger.info("Correo enviado a %s — asunto: %s", destinatario, asunto)
 
 
 def enviar_bienvenida_medico(
@@ -258,3 +271,42 @@ def enviar_invitacion_admin(
 """
 
     enviar_email(email, asunto, cuerpo_texto, cuerpo_html)
+
+
+def diagnosticar_smtp() -> dict:
+    """
+    Prueba la configuración SMTP sin enviar ningún correo: conecta, hace STARTTLS y
+    autentica. Devuelve un dict con la configuración efectiva (nunca la contraseña) y
+    el resultado real del intento.
+
+    Existe porque todos los envíos corren en background o con los errores capturados,
+    así que un SMTP roto es indistinguible de un correo que sí salió pero no llegó.
+    """
+    config = {
+        "configurado": smtp_configurado(),
+        "host": settings.SMTP_HOST or None,
+        "puerto": settings.SMTP_PORT,
+        "usuario": settings.SMTP_USER or None,
+        "remitente": (settings.SMTP_FROM or settings.SMTP_USER) or None,
+        "starttls": settings.SMTP_STARTTLS,
+        "password_definida": bool(settings.SMTP_PASSWORD),
+        "frontend_url": settings.FRONTEND_URL,
+    }
+
+    if not smtp_configurado():
+        return {
+            **config,
+            "ok": False,
+            "error": "SMTP no configurado: faltan SMTP_HOST y/o SMTP_USER en el entorno.",
+        }
+
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as servidor:
+            if settings.SMTP_STARTTLS:
+                servidor.starttls()
+            servidor.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+    except Exception as e:  # noqa: BLE001 - el objetivo es justamente reportar el fallo
+        logger.error("Diagnóstico SMTP fallido (%s): %s", type(e).__name__, e)
+        return {**config, "ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    return {**config, "ok": True, "error": None}

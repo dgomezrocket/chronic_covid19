@@ -98,7 +98,10 @@ constructor(baseURL?: string) {
     headers: {
       'Content-Type': 'application/json',
     },
-    timeout: 10000,
+    // 30 s: con 10 s, un arranque en frío del backend o un endpoint que espera al SMTP
+    // (timeout propio de 15 s) abortaba del lado del cliente y la app lo mostraba como
+    // "no se pudo conectar", aunque el servidor sí hubiera procesado el pedido.
+    timeout: 30000,
   });
 
   // Interceptor para agregar el token
@@ -167,7 +170,9 @@ clearToken() {
   async login(credentials: LoginCredentials): Promise<TokenResponse> {
     try {
       const formData = new URLSearchParams();
-      formData.append('username', credentials.username);
+      // El email es la credencial: se manda normalizado para que el casing con el que se
+      // tipea nunca cambie el resultado. La contraseña va tal cual, sin recortar.
+      formData.append('username', credentials.username.trim().toLowerCase());
       formData.append('password', credentials.password);
 
       const response = await this.client.post<TokenResponse>(
@@ -237,7 +242,7 @@ clearToken() {
     try {
       const response = await this.client.post<{ message: string }>(
         '/auth/forgot-password',
-        { email }
+        { email: email.trim().toLowerCase() }
       );
       return response.data;
     } catch (error) {
@@ -281,7 +286,7 @@ clearToken() {
     try {
       const response = await this.client.post<{ message: string }>(
         '/auth/resend-verification',
-        { email }
+        { email: email.trim().toLowerCase() }
       );
       return response.data;
     } catch (error) {
@@ -1521,6 +1526,11 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
         }
         if (axiosError.code === 'ERR_NETWORK') {
           return new ApiRequestError('Error de red. Verifica tu conexión y que el backend esté corriendo.');
+        }
+        // Un timeout NO es falta de conexión: el pedido salió y puede haberse procesado.
+        // Decirle al usuario que revise su conexión lo manda a buscar el problema donde no está.
+        if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
+          return new ApiRequestError('El servidor está tardando demasiado en responder. Esperá unos segundos e intentá de nuevo.');
         }
         return new ApiRequestError(`Error de conexión: ${axiosError.message}`);
       }

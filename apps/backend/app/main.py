@@ -1,3 +1,6 @@
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
@@ -14,6 +17,15 @@ from app.routers import (
     formularios,
     mensajes,
     importacion_medicos
+)
+
+# Logging de la aplicación. Sin esto, los `logger.info/warning/error` de los routers y
+# del servicio de correo caían en el `lastResort` de Python: llegaban a stderr como texto
+# pelado, sin nivel, sin timestamp y sin el nombre del módulo, y los INFO se descartaban.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    force=True,  # uvicorn ya configuró el logging al importar este módulo.
 )
 
 app = FastAPI(

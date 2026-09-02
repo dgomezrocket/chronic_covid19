@@ -19,6 +19,7 @@ from app.core.security import (
     get_password_hash, verify_password, create_access_token, get_current_user
 )
 from app.core.config import settings
+from app.core.deps import require_admin
 from app.services import email_service
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timedelta
@@ -46,6 +47,35 @@ _MENSAJE_EMAIL_EN_USO_SIN_VERIFICAR = (
 )
 
 
+def _normalizar_email(email: str) -> str:
+    """
+    Forma canónica del email: sin espacios y en minúsculas.
+
+    El email es la credencial de login, así que TODA alta debe guardarlo normalizado y
+    toda búsqueda debe compararlo normalizado. Sin esto, quien se registra como
+    'Juan@Gmail.com' no puede iniciar sesión escribiendo 'juan@gmail.com' ni recuperar
+    su contraseña.
+    """
+    return str(email).strip().lower()
+
+
+def _buscar_cuenta_por_email(db: Session, email: str):
+    """
+    Busca una cuenta por email en las 4 tablas de usuarios, SIN distinguir
+    mayúsculas/minúsculas. Devuelve (rol, user) o (None, None).
+
+    La comparación es insensible a propósito: las cuentas creadas antes de que el alta
+    normalizara el email quedaron guardadas tal cual se tipearon, y son las mismas que
+    el usuario escribe en minúsculas al iniciar sesión.
+    """
+    objetivo = _normalizar_email(email)
+    for rol, modelo in _MODELOS_POR_ROL:
+        user = db.query(modelo).filter(func.lower(modelo.email) == objetivo).first()
+        if user:
+            return rol, user
+    return None, None
+
+
 def _validar_email_disponible(db: Session, email: str) -> None:
     """
     Rechaza el alta si el email ya pertenece a CUALQUIER cuenta del sistema.
@@ -58,7 +88,7 @@ def _validar_email_disponible(db: Session, email: str) -> None:
     Si la cuenta existente sigue pendiente de verificar, el mensaje lo aclara para que el
     usuario sepa que puede reenviarse el enlace en vez de probar con otro correo.
     """
-    _, user = _buscar_cuenta_por_email_ci(db, email)
+    _, user = _buscar_cuenta_por_email(db, email)
     if not user:
         return
 
@@ -108,7 +138,7 @@ def register_paciente(
         fecha_nacimiento=paciente.fecha_nacimiento,
         genero=paciente.genero,
         direccion=paciente.direccion,
-        email=paciente.email,
+        email=_normalizar_email(paciente.email),
         telefono=paciente.telefono,
         latitud=paciente.latitud,
         longitud=paciente.longitud,
@@ -236,13 +266,9 @@ def register_medico(
 @router.post("/register/coordinador", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(get_db)):
     """Registra un nuevo coordinador en el sistema (solo admin)"""
-    # Verificar si el email ya existe
-    existing_email = db.query(Coordinador).filter(Coordinador.email == coordinador.email).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El email ya está registrado"
-        )
+    # Verificar si el email ya existe (en cualquier tabla de usuarios, sin distinguir
+    # mayúsculas): el login recorre las 4 tablas, así que un duplicado lo volvería ambiguo.
+    _validar_email_disponible(db, str(coordinador.email))
 
     # Verificar si el documento ya existe
     existing_doc = db.query(Coordinador).filter(Coordinador.documento == coordinador.documento).first()
@@ -257,7 +283,7 @@ def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(g
     nuevo_coordinador = Coordinador(
         documento=coordinador.documento,
         nombre=coordinador.nombre,
-        email=coordinador.email,
+        email=_normalizar_email(coordinador.email),
         hashed_password=hashed_password,
         hospital_id=coordinador.hospital_id,
         rol=RolEnum.coordinador
@@ -283,40 +309,23 @@ def register_coordinador(coordinador: CoordinadorCreate, db: Session = Depends(g
 
 @router.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login universal para pacientes, médicos, coordinadores y administradores"""
-    # Buscar en todas las tablas de usuarios
-    user = None
-    user_type = None
+    """
+    Login universal para pacientes, médicos, coordinadores y administradores.
 
-    # Buscar en pacientes
-    user = db.query(Paciente).filter(Paciente.email == form_data.username).first()
-    if user:
-        user_type = "paciente"
+    La cuenta se busca con `_buscar_cuenta_por_email`, que recorre las 4 tablas SIN
+    distinguir mayúsculas/minúsculas. Antes la comparación era exacta y, como el alta
+    guardaba el email tal cual se tipeaba, quien se registraba como 'Juan@Gmail.com'
+    recibía un 401 "Credenciales incorrectas" al escribirlo en minúsculas.
+    """
+    user_type, user = _buscar_cuenta_por_email(db, form_data.username)
 
-    # Si no es paciente, buscar en médicos
-    if not user:
-        user = db.query(Medico).filter(Medico.email == form_data.username).first()
-        if user:
-            user_type = "medico"
-
-    # Si no es médico, buscar en coordinadores
-    if not user:
-        user = db.query(Coordinador).filter(Coordinador.email == form_data.username).first()
-        if user:
-            user_type = "coordinador"
-
-    # Si no es coordinador, buscar en administradores
-    if not user:
-        user = db.query(Admin).filter(Admin.email == form_data.username).first()
-        if user:
-            user_type = "admin"
-            # Verificar que el admin esté activo
-            if user.activo == 0:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Cuenta de administrador desactivada. Contacta al sistema.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+    # Verificar que el admin esté activo (los demás roles no tienen esta marca).
+    if user is not None and user_type == "admin" and user.activo == 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cuenta de administrador desactivada. Contacta al sistema.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Verificar contraseña
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -412,15 +421,6 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _buscar_cuenta_por_email(db: Session, email: str):
-    """Busca una cuenta por email en las 4 tablas de usuarios. Devuelve (rol, user) o (None, None)."""
-    for rol, modelo in _MODELOS_POR_ROL:
-        user = db.query(modelo).filter(modelo.email == email).first()
-        if user:
-            return rol, user
-    return None, None
-
-
 def _modelo_por_rol(rol: str):
     for r, modelo in _MODELOS_POR_ROL:
         if r == rol:
@@ -428,24 +428,57 @@ def _modelo_por_rol(rol: str):
     return None
 
 
+def _enviar_recuperacion_seguro(email: str, nombre: str, token: str, expira_minutos: int) -> None:
+    """
+    Envía el correo de recuperación. Un fallo se loguea y NUNCA rompe la respuesta: el
+    token ya quedó guardado y el usuario puede volver a pedir el enlace.
+
+    Se ejecuta como BackgroundTask, así que recibe solo strings: cuando corre, la sesión
+    de base de datos ya fue cerrada por `get_db`. Correrlo fuera del request también
+    evita que el timeout de SMTP (15 s) agote el del cliente HTTP.
+    """
+    try:
+        email_service.enviar_recuperacion_password(
+            email=email,
+            nombre=nombre,
+            token=token,
+            expira_minutos=expira_minutos,
+        )
+    except email_service.EmailNoConfiguradoError:
+        logger.warning("SMTP no configurado: no se envió el correo de recuperación a %s.", email)
+    except Exception as e:  # noqa: BLE001
+        logger.error("Falló el envío del correo de recuperación a %s: %s", email, e)
+
+
 @router.post("/forgot-password", response_model=MessageResponse)
-def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    body: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """
     Solicita la recuperación de contraseña. Por seguridad, la respuesta es SIEMPRE
     genérica: no revela si el email está o no registrado.
+
+    Justamente porque la respuesta no distingue los casos, el "no existe la cuenta" se
+    loguea: sin esa línea era imposible saber si un correo que no llegaba se había
+    intentado enviar y falló, o si nunca se intentó.
     """
     mensaje_generico = {
         "message": "Si el email está registrado, te enviamos instrucciones para restablecer la contraseña."
     }
 
-    email = str(body.email).strip().lower()
+    email = _normalizar_email(body.email)
     rol, user = _buscar_cuenta_por_email(db, email)
     if not user:
+        logger.info("forgot-password: no hay ninguna cuenta con el email %s.", email)
         return mensaje_generico
 
-    # Invalidar tokens anteriores no usados de esta cuenta.
+    # Invalidar tokens anteriores no usados de esta cuenta. La comparación es insensible
+    # a mayúsculas porque los tokens emitidos antes de normalizar guardaron el email
+    # tal cual venía.
     db.query(PasswordResetToken).filter(
-        PasswordResetToken.email == email,
+        func.lower(PasswordResetToken.email) == email,
         PasswordResetToken.used == False,  # noqa: E712
     ).update({PasswordResetToken.used: True})
 
@@ -462,18 +495,14 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
     db.add(reset)
     db.commit()
 
-    # El fallo de envío NO debe romper la respuesta genérica ni revelar información.
-    try:
-        email_service.enviar_recuperacion_password(
-            email=email,
-            nombre=getattr(user, "nombre", ""),
-            token=token,
-            expira_minutos=expira_minutos,
-        )
-    except email_service.EmailNoConfiguradoError:
-        logger.warning("SMTP no configurado: no se envió el correo de recuperación.")
-    except Exception as e:  # noqa: BLE001
-        logger.error("Falló el envío del correo de recuperación: %s", e)
+    # El correo se manda al email GUARDADO de la cuenta, no al que se tipeó en el pedido.
+    background_tasks.add_task(
+        _enviar_recuperacion_seguro,
+        user.email,
+        getattr(user, "nombre", ""),
+        token,
+        expira_minutos,
+    )
 
     return mensaje_generico
 
@@ -534,7 +563,10 @@ def cambiar_password_usuario_actual(
     usa `reset_password`, así que los cuatro roles (paciente, médico, coordinador y
     admin) comparten una única implementación.
     """
-    nueva = (payload.password or "").strip()
+    # OJO: la contraseña NO se recorta. `login` la verifica tal cual la tipea el usuario
+    # y `reset_password` la hashea tal cual, así que un `.strip()` acá dejaría inutilizable
+    # cualquier contraseña con un espacio al principio o al final.
+    nueva = payload.password or ""
     if len(nueva) < PASSWORD_MIN_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -588,8 +620,9 @@ def _crear_token_verificacion(db: Session, *, rol: str, usuario_id: int, email: 
     NO hace commit a propósito: el caller decide la transacción, porque el token debe
     guardarse junto con el alta de la cuenta (o junto al reenvío).
     """
+    email = _normalizar_email(email)
     db.query(EmailVerificationToken).filter(
-        EmailVerificationToken.email == email,
+        func.lower(EmailVerificationToken.email) == email,
         EmailVerificationToken.used == False,  # noqa: E712
     ).update({EmailVerificationToken.used: True})
 
@@ -626,22 +659,6 @@ def _enviar_verificacion_seguro(email: str, nombre: str, token: str) -> None:
         logger.warning("SMTP no configurado: no se envió la verificación a %s.", email)
     except Exception as e:  # noqa: BLE001
         logger.error("Falló el envío de la verificación a %s: %s", email, e)
-
-
-def _buscar_cuenta_por_email_ci(db: Session, email: str):
-    """
-    Igual que `_buscar_cuenta_por_email` pero insensible a mayúsculas/minúsculas.
-
-    Es necesario porque el alta guarda el email tal cual se tipeó: sin esto, quien se
-    registre como 'Juan@Gmail.com' nunca podría reenviarse el correo de verificación,
-    y el reenvío es la única vía de rescate de una cuenta sin verificar.
-    """
-    objetivo = email.strip().lower()
-    for rol, modelo in _MODELOS_POR_ROL:
-        user = db.query(modelo).filter(func.lower(modelo.email) == objetivo).first()
-        if user:
-            return rol, user
-    return None, None
 
 
 @router.post("/verify-email", response_model=MessageResponse)
@@ -706,7 +723,7 @@ def resend_verification(
         )
     }
 
-    rol, user = _buscar_cuenta_por_email_ci(db, str(body.email))
+    rol, user = _buscar_cuenta_por_email(db, str(body.email))
     if not user or rol not in _ROLES_CON_VERIFICACION:
         return mensaje_generico
     if getattr(user, "email_verificado", True):
@@ -724,3 +741,18 @@ def resend_verification(
     )
 
     return mensaje_generico
+
+
+# ========== DIAGNÓSTICO ==========
+
+@router.get("/diagnostico-smtp")
+def diagnostico_smtp(_admin: dict = Depends(require_admin)):
+    """
+    Informa la configuración SMTP efectiva y si el servidor acepta la conexión y las
+    credenciales. NO envía ningún correo y nunca devuelve la contraseña.
+
+    Es la contrapartida de que todos los envíos capturen sus errores: sin esto, un
+    "200 OK" de /auth/forgot-password no dice si el correo salió, si el proveedor lo
+    rechazó o si SMTP ni siquiera está configurado en el entorno.
+    """
+    return email_service.diagnosticar_smtp()

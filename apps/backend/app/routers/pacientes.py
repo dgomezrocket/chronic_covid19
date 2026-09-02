@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.db import get_db
 from app.models.models import Paciente, RespuestaFormulario
@@ -34,10 +35,16 @@ def update_paciente(id: int, paciente_update: PacienteUpdate, db: Session = Depe
         if existe:
             raise HTTPException(status_code=400, detail="El documento de identidad ya está registrado")
 
+    # El email se guarda normalizado y el duplicado se busca sin distinguir mayúsculas:
+    # es la credencial de login, y dejar entrar 'Juan@x.com' junto a 'juan@x.com' volvería
+    # ambigua la cuenta.
     nuevo_email = datos.get("email")
-    if nuevo_email and nuevo_email != paciente.email:
+    if nuevo_email:
+        nuevo_email = str(nuevo_email).strip().lower()
+        datos["email"] = nuevo_email
+    if nuevo_email and nuevo_email != paciente.email.lower():
         existe = db.query(Paciente).filter(
-            Paciente.email == nuevo_email,
+            func.lower(Paciente.email) == nuevo_email,
             Paciente.id != id,
         ).first()
         if existe:

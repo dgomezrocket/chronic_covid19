@@ -3,6 +3,7 @@ Servicios para la gestión de coordinadores y asignaciones
 Contiene toda la lógica de negocio relacionada con coordinadores
 """
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import List, Optional, Tuple
@@ -133,9 +134,11 @@ def crear_coordinador(
             detail=f"Ya existe un coordinador con el documento {coordinador_data.documento}"
         )
 
-    # Verificar que no exista un coordinador con ese email
+    # Verificar que no exista un coordinador con ese email (sin distinguir mayúsculas:
+    # el email es la credencial de login y el alta lo guarda normalizado).
+    coordinador_data.email = str(coordinador_data.email).strip().lower()
     existing_email = db.query(Coordinador).filter(
-        Coordinador.email == coordinador_data.email
+        func.lower(Coordinador.email) == coordinador_data.email
     ).first()
     if existing_email:
         raise HTTPException(

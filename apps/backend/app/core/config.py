@@ -1,5 +1,14 @@
 import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Tiene que correr ANTES de instanciar Settings. El otro `load_dotenv()` del proyecto vive
+# dentro de `init_engine()` (app/db/db.py) y se ejecuta recién en el primer request, o sea
+# mucho después de que este módulo congeló los valores: sin esta línea, un `.env` local
+# nunca alimentaba SMTP_*, FRONTEND_URL ni SECRET_KEY y no había forma de probar el envío
+# de correos fuera de producción. En Railway no cambia nada (son variables de entorno reales).
+load_dotenv()
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Chronic COVID19 API"

@@ -9,10 +9,16 @@ reglas de validación ni el mecanismo de creación/hash de contraseñas.
 import secrets
 from typing import List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.models.models import Medico, Paciente, Especialidad, Hospital, RolEnum
+
+
+def normalizar_email(email: str) -> str:
+    """Forma canónica del email (sin espacios, en minúsculas). Ver `auth._normalizar_email`."""
+    return str(email).strip().lower()
 
 
 class MedicoValidationError(ValueError):
@@ -26,10 +32,16 @@ def generar_password_temporal() -> str:
 
 
 def email_en_uso(db: Session, email: str) -> bool:
-    """True si el email ya está usado por un médico o un paciente (igual que el alta individual)."""
-    if db.query(Medico).filter(Medico.email == email).first():
+    """
+    True si el email ya está usado por un médico o un paciente.
+
+    Sin distinguir mayúsculas/minúsculas: el email es la credencial de login y el login
+    lo compara normalizado, así que 'Juan@x.com' y 'juan@x.com' son la misma cuenta.
+    """
+    objetivo = normalizar_email(email)
+    if db.query(Medico).filter(func.lower(Medico.email) == objetivo).first():
         return True
-    if db.query(Paciente).filter(Paciente.email == email).first():
+    if db.query(Paciente).filter(func.lower(Paciente.email) == objetivo).first():
         return True
     return False
 
@@ -105,6 +117,8 @@ def crear_medico(
         raise MedicoValidationError("El documento es obligatorio")
     if not email or not email.strip():
         raise MedicoValidationError("El email es obligatorio")
+
+    email = normalizar_email(email)
 
     if email_en_uso(db, email):
         raise MedicoValidationError("El email ya está registrado")
