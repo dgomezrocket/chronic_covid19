@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { RolEnum, FormularioAsignacionDetalle } from '@chronic-covid19/shared-types';
 import { apiClient } from '@chronic-covid19/api-client';
+import { normalizarTextoVisible } from '@/lib/text';
+import { asignacionVencida } from '@/lib/formularios';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -54,6 +56,12 @@ export default function DashboardPage() {
     logout();
     router.push('/login');
   };
+
+  // Formularios que el paciente todavía puede responder: los vencidos no cuentan como
+  // pendientes aunque el backend los haya dejado en ese estado.
+  const pendientes = formularios.filter(
+    (f) => f.estado === 'pendiente' && !asignacionVencida(f)
+  ).length;
 
   const getRoleBadgeColor = (rol: RolEnum) => {
     switch (rol) {
@@ -376,9 +384,9 @@ export default function DashboardPage() {
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
                     Mis Formularios
-                    {formularios.filter((f) => f.estado === 'pendiente').length > 0 && (
+                    {pendientes > 0 && (
                       <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
-                        {formularios.filter((f) => f.estado === 'pendiente').length} pendiente(s)
+                        {pendientes} pendiente(s)
                       </span>
                     )}
                   </h3>
@@ -395,42 +403,71 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-400 italic">No tienes formularios asignados</p>
                   ) : (
                     <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {formularios.map((asignacion) => (
-                        <Link
-                          key={asignacion.id}
-                          href={
-                            asignacion.estado === 'completado'
-                              ? `/dashboard/paciente/formularios/${asignacion.id}/respuesta`
-                              : `/dashboard/paciente/formularios/${asignacion.id}`
-                          }
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-purple-50 transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {asignacion.formulario_titulo || 'Formulario'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {asignacion.estado === 'completado'
-                                ? `Completado: ${asignacion.fecha_completado ? new Date(asignacion.fecha_completado).toLocaleDateString('es-PY') : ''}`
-                                : asignacion.fecha_expiracion
-                                  ? `Vence: ${new Date(asignacion.fecha_expiracion).toLocaleDateString('es-PY')}`
-                                  : 'Sin fecha límite'}
-                            </p>
-                          </div>
-                          <div className="flex items-center ml-2">
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                              asignacion.estado === 'pendiente'
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : asignacion.estado === 'completado'
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {asignacion.estado === 'pendiente' ? 'Pendiente' :
-                               asignacion.estado === 'completado' ? 'Ver respuesta' : asignacion.estado}
-                            </span>
-                          </div>
-                        </Link>
-                      ))}
+                      {formularios.map((asignacion) => {
+                        const vencida = asignacionVencida(asignacion);
+                        const completada = asignacion.estado === 'completado';
+                        const titulo =
+                          normalizarTextoVisible(asignacion.formulario_titulo) || 'Formulario';
+
+                        const detalle = completada
+                          ? `Completado: ${asignacion.fecha_completado ? new Date(asignacion.fecha_completado).toLocaleDateString('es-PY') : ''}`
+                          : asignacion.fecha_expiracion
+                            ? `${vencida ? 'Venció' : 'Vence'}: ${new Date(asignacion.fecha_expiracion).toLocaleDateString('es-PY')}`
+                            : 'Sin fecha límite';
+
+                        const contenido = (
+                          <>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{titulo}</p>
+                              <p className={`text-xs ${vencida ? 'text-red-500' : 'text-gray-500'}`}>
+                                {detalle}
+                              </p>
+                            </div>
+                            <div className="flex items-center ml-2">
+                              <span className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
+                                vencida
+                                  ? 'bg-red-100 text-red-700'
+                                  : completada
+                                    ? 'bg-green-100 text-green-700'
+                                    : asignacion.estado === 'pendiente'
+                                      ? 'bg-yellow-100 text-yellow-700'
+                                      : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {vencida ? 'Vencido' :
+                                 completada ? 'Ver respuesta' :
+                                 asignacion.estado === 'pendiente' ? 'Pendiente' : asignacion.estado}
+                              </span>
+                            </div>
+                          </>
+                        );
+
+                        // Un formulario vencido sin responder no tiene a dónde llevar: no se
+                        // puede completar y no hay respuesta que mostrar. Va sin link.
+                        if (vencida) {
+                          return (
+                            <div
+                              key={asignacion.id}
+                              className="flex items-center justify-between p-2 bg-gray-50 rounded-lg opacity-75"
+                            >
+                              {contenido}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <Link
+                            key={asignacion.id}
+                            href={
+                              completada
+                                ? `/dashboard/paciente/formularios/${asignacion.id}/respuesta`
+                                : `/dashboard/paciente/formularios/${asignacion.id}`
+                            }
+                            className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-purple-50 transition-colors"
+                          >
+                            {contenido}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

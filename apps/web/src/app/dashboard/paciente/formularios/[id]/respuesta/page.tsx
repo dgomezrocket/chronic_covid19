@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { apiClient } from '@chronic-covid19/api-client';
+import { normalizarTextoVisible } from '@/lib/text';
 
 interface Campo {
   id: string;
@@ -34,27 +35,6 @@ export default function VerRespuestaFormularioPage() {
   const [data, setData] = useState<RespuestaDetalle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const decodeUnicodeEscapes = (value: unknown): string => {
-    if (value == null) return '';
-
-    const str = typeof value === 'string' ? value : String(value);
-
-    if (!str.includes('\\u')) return str;
-
-    try {
-      return JSON.parse(
-        `"${str
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"')
-          .replace(/\\\\u/g, '\\u')}"`
-      );
-    } catch {
-      return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
-        String.fromCharCode(parseInt(hex, 16))
-      );
-    }
-  };
 
   const cargarRespuesta = async () => {
     try {
@@ -130,7 +110,7 @@ export default function VerRespuestaFormularioPage() {
         if (Array.isArray(valor)) {
           return (
             <span className="text-gray-900">
-              {valor.map(decodeUnicodeEscapes).join(', ')}
+              {valor.map(normalizarTextoVisible).join(', ')}
             </span>
           );
         }
@@ -138,12 +118,12 @@ export default function VerRespuestaFormularioPage() {
         if (typeof valor === 'object') {
           return (
             <span className="text-gray-900 whitespace-pre-wrap">
-              {decodeUnicodeEscapes(JSON.stringify(valor, null, 2))}
+              {normalizarTextoVisible(JSON.stringify(valor, null, 2))}
             </span>
           );
         }
 
-        return <span className="text-gray-900">{decodeUnicodeEscapes(valor)}</span>;
+        return <span className="text-gray-900">{normalizarTextoVisible(valor)}</span>;
     }
   };
 
@@ -222,12 +202,12 @@ export default function VerRespuestaFormularioPage() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                {decodeUnicodeEscapes(data.formulario_titulo)}
+                {normalizarTextoVisible(data.formulario_titulo)}
               </h1>
 
               {data.formulario_descripcion && (
                 <p className="text-gray-600">
-                  {decodeUnicodeEscapes(data.formulario_descripcion)}
+                  {normalizarTextoVisible(data.formulario_descripcion)}
                 </p>
               )}
             </div>
@@ -275,7 +255,7 @@ export default function VerRespuestaFormularioPage() {
             {data.preguntas.map((campo, index) => (
               <div key={campo.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {index + 1}. {decodeUnicodeEscapes(campo.label)}
+                  {index + 1}. {normalizarTextoVisible(campo.label)}
                   {campo.required && <span className="text-red-500 ml-1">*</span>}
                 </label>
 

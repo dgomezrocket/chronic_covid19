@@ -16,6 +16,7 @@ from app.schemas.schemas import (
     MiRespuestaFormularioOut
 )
 from app.core.security import get_current_user
+from app.utils.formularios import esta_vencida, estado_visible, inicio_de_hoy
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ def require_medico(current_user: dict = Depends(get_current_user)):
 
 @router.get("/mis-asignaciones", response_model=List[FormularioAsignacionDetalleOut])
 def mis_asignaciones(
-    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, completado, todos"),
+    estado: Optional[str] = Query(None, description="Filtrar por estado: pendiente, completado, expirado, todos"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -44,20 +45,22 @@ def mis_asignaciones(
     if current_user["rol"] != "paciente":
         raise HTTPException(status_code=403, detail="Solo pacientes pueden ver sus asignaciones")
 
-    query = db.query(FormularioAsignacion).join(Formulario).filter(
+    asignaciones = db.query(FormularioAsignacion).join(Formulario).filter(
         FormularioAsignacion.paciente_id == current_user["id"]
-    )
-    
-    # Filtrar por estado si se especifica
-    if estado and estado != "todos":
-        query = query.filter(FormularioAsignacion.estado == estado)
-
-    asignaciones = query.order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
+    ).order_by(FormularioAsignacion.fecha_asignacion.desc()).all()
 
     result = []
     for a in asignaciones:
+        # `estado_visible` traduce una asignación pendiente cuya fecha límite pasó a
+        # "expirado". El filtro se aplica sobre ese estado derivado (y no en SQL) para que
+        # ?estado=pendiente no devuelva vencidas y ?estado=expirado sí las encuentre. La
+        # lista es de un solo paciente y no pagina, así que filtrar en Python alcanza.
+        estado_actual = estado_visible(a)
+        if estado and estado != "todos" and estado_actual != estado:
+            continue
         result.append({
             **a.__dict__,
+            "estado": estado_actual,
             "formulario_titulo": a.formulario.titulo,
             "formulario_tipo": a.formulario.tipo,
             "formulario_descripcion": a.formulario.descripcion
@@ -261,6 +264,7 @@ def listar_asignaciones_formulario(
     return [
         {
             **asignacion.__dict__,
+            "estado": estado_visible(asignacion),
             "formulario_titulo": asignacion.formulario.titulo if asignacion.formulario else None,
             "formulario_tipo": asignacion.formulario.tipo if asignacion.formulario else "",
             "formulario_descripcion": asignacion.formulario.descripcion if asignacion.formulario else None,
@@ -278,7 +282,15 @@ def responder_formulario(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Paciente responde a un formulario asignado"""
+    """Paciente responde a un formulario asignado.
+
+    Rechaza los envíos que ya no corresponden: de otro paciente, de una asignación ya
+    respondida o cancelada, y de una cuya fecha límite pasó. Sin estas validaciones el
+    bloqueo existía solo en la interfaz y se podía saltear llamando la API directo.
+    """
+    if current_user["rol"] != "paciente":
+        raise HTTPException(status_code=403, detail="Solo pacientes pueden responder formularios")
+
     asignacion = db.query(FormularioAsignacion).filter(
         FormularioAsignacion.id == asignacion_id
     ).first()
@@ -288,6 +300,24 @@ def responder_formulario(
     
     if asignacion.paciente_id != current_user["id"]:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta asignación")
+
+    if asignacion.estado == "completado":
+        raise HTTPException(status_code=400, detail="Ya respondiste este formulario.")
+
+    if asignacion.estado != "pendiente":
+        raise HTTPException(
+            status_code=400,
+            detail="Este formulario ya no está disponible para responder."
+        )
+
+    if esta_vencida(asignacion.fecha_expiracion):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Este formulario venció el "
+                f"{asignacion.fecha_expiracion.strftime('%d/%m/%Y')} y ya no puede responderse."
+            )
+        )
     
     # Crear respuesta
     respuesta = RespuestaFormulario(
@@ -518,8 +548,26 @@ def listar_resumen_respuestas(
             func.lower(Paciente.documento).like(patron)
         ))
 
+    # El estado "expirado" no se persiste: se deriva de la fecha límite. El filtro se
+    # traduce a SQL (y no se aplica sobre los items ya paginados) para que `total` y la
+    # página coincidan.
     if estado and estado.lower() != "todos":
-        query = query.filter(FormularioAsignacion.estado == estado)
+        estado = estado.lower()
+        if estado == "expirado":
+            query = query.filter(
+                FormularioAsignacion.estado == "pendiente",
+                FormularioAsignacion.fecha_expiracion < inicio_de_hoy()
+            )
+        elif estado == "pendiente":
+            query = query.filter(
+                FormularioAsignacion.estado == "pendiente",
+                or_(
+                    FormularioAsignacion.fecha_expiracion.is_(None),
+                    FormularioAsignacion.fecha_expiracion >= inicio_de_hoy()
+                )
+            )
+        else:
+            query = query.filter(FormularioAsignacion.estado == estado)
 
     total = query.count()
 
@@ -547,7 +595,7 @@ def listar_resumen_respuestas(
             "asignacion_id": asig.id,
             "formulario_id": asig.formulario_id,
             "formulario_titulo": asig.formulario.titulo if asig.formulario else None,
-            "estado": asig.estado,
+            "estado": estado_visible(asig),
             "numero_instancia": asig.numero_instancia,
             "paciente_id": asig.paciente_id,
             "paciente_nombre": asig.paciente.nombre if asig.paciente else None,

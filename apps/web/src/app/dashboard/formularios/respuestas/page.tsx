@@ -13,10 +13,11 @@ import {
   Hospital,
   Medico,
 } from '@chronic-covid19/shared-types';
+import { normalizarTextoVisible } from '@/lib/text';
 
 const LIMIT = 50;
 
-type EstadoFiltro = 'todos' | 'pendiente' | 'completado';
+type EstadoFiltro = 'todos' | 'pendiente' | 'completado' | 'expirado';
 
 export default function RespuestasFormulariosPage() {
   const router = useRouter();
@@ -195,18 +196,6 @@ export default function RespuestasFormulariosPage() {
     }
   };
 
-  // Decodifica secuencias Unicode escapadas (ej: "¿" -> "¿")
-  const decodeUnicodeEscapes = (value: unknown): string => {
-    if (value == null) return '';
-    const str = typeof value === 'string' ? value : String(value);
-    if (!str.includes('\\u')) return str;
-    try {
-      return JSON.parse(`"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\\\\u/g, '\\u')}"`);
-    } catch {
-      return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-    }
-  };
-
   const getInitials = (nombre: string) =>
     nombre
       .split(/\s+/)
@@ -284,16 +273,16 @@ export default function RespuestasFormulariosPage() {
 
       default:
         if (Array.isArray(valor)) {
-          return <span className="text-gray-900">{valor.map(decodeUnicodeEscapes).join(', ')}</span>;
+          return <span className="text-gray-900">{valor.map(normalizarTextoVisible).join(', ')}</span>;
         }
         if (typeof valor === 'object') {
           return (
             <span className="text-gray-900 whitespace-pre-wrap">
-              {decodeUnicodeEscapes(JSON.stringify(valor, null, 2))}
+              {normalizarTextoVisible(JSON.stringify(valor, null, 2))}
             </span>
           );
         }
-        return <span className="text-gray-900">{decodeUnicodeEscapes(valor)}</span>;
+        return <span className="text-gray-900">{normalizarTextoVisible(valor)}</span>;
     }
   };
 
@@ -392,6 +381,7 @@ export default function RespuestasFormulariosPage() {
                 <option value="todos">Todos</option>
                 <option value="pendiente">Pendiente</option>
                 <option value="completado">Respondido / Completado</option>
+                <option value="expirado">Vencido</option>
               </select>
             </div>
 
@@ -411,7 +401,7 @@ export default function RespuestasFormulariosPage() {
                   <option value="">Todos los hospitales</option>
                   {hospitales.map((h) => (
                     <option key={h.id} value={h.id}>
-                      {decodeUnicodeEscapes(h.nombre)}
+                      {normalizarTextoVisible(h.nombre)}
                     </option>
                   ))}
                 </select>
@@ -442,7 +432,7 @@ export default function RespuestasFormulariosPage() {
                   <option value="">Todos los médicos</option>
                   {medicosFiltrados.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {decodeUnicodeEscapes(m.nombre)}
+                      {normalizarTextoVisible(m.nombre)}
                     </option>
                   ))}
                 </select>
@@ -518,7 +508,7 @@ export default function RespuestasFormulariosPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {items.map((item) => {
-                      const nombre = decodeUnicodeEscapes(item.paciente_nombre || '') || `Paciente #${item.paciente_id}`;
+                      const nombre = normalizarTextoVisible(item.paciente_nombre || '') || `Paciente #${item.paciente_id}`;
                       return (
                         <tr key={item.asignacion_id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 whitespace-nowrap">
@@ -533,7 +523,7 @@ export default function RespuestasFormulariosPage() {
                             {item.paciente_documento || '—'}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {decodeUnicodeEscapes(item.formulario_titulo || '') || `Formulario #${item.formulario_id}`}
+                            {normalizarTextoVisible(item.formulario_titulo || '') || `Formulario #${item.formulario_id}`}
                             {item.numero_instancia > 1 && (
                               <span className="ml-2 text-xs text-gray-400">#{item.numero_instancia}</span>
                             )}
@@ -544,10 +534,10 @@ export default function RespuestasFormulariosPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {decodeUnicodeEscapes(item.medico_nombre || '') || '—'}
+                            {normalizarTextoVisible(item.medico_nombre || '') || '—'}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {decodeUnicodeEscapes(item.hospital_nombre || '') || '—'}
+                            {normalizarTextoVisible(item.hospital_nombre || '') || '—'}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                             {formatDate(item.fecha_asignacion)}
@@ -611,7 +601,7 @@ export default function RespuestasFormulariosPage() {
             {/* Header modal */}
             <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">
-                {detalle ? decodeUnicodeEscapes(detalle.formulario_titulo || 'Respuesta del formulario') : 'Respuesta del formulario'}
+                {detalle ? normalizarTextoVisible(detalle.formulario_titulo || 'Respuesta del formulario') : 'Respuesta del formulario'}
               </h2>
               <button onClick={cerrarModal} className="text-white/80 hover:text-white transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -635,7 +625,7 @@ export default function RespuestasFormulariosPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 bg-gray-50 rounded-xl p-4 text-sm">
                     <div>
                       <span className="text-gray-500">Paciente:</span>{' '}
-                      <span className="font-medium text-gray-900">{decodeUnicodeEscapes(detalle.paciente_nombre || '') || '—'}</span>
+                      <span className="font-medium text-gray-900">{normalizarTextoVisible(detalle.paciente_nombre || '') || '—'}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">CI / Documento:</span>{' '}
@@ -643,11 +633,11 @@ export default function RespuestasFormulariosPage() {
                     </div>
                     <div>
                       <span className="text-gray-500">Médico:</span>{' '}
-                      <span className="font-medium text-gray-900">{decodeUnicodeEscapes(detalle.medico_nombre || '') || '—'}</span>
+                      <span className="font-medium text-gray-900">{normalizarTextoVisible(detalle.medico_nombre || '') || '—'}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Hospital:</span>{' '}
-                      <span className="font-medium text-gray-900">{decodeUnicodeEscapes(detalle.hospital_nombre || '') || '—'}</span>
+                      <span className="font-medium text-gray-900">{normalizarTextoVisible(detalle.hospital_nombre || '') || '—'}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Asignado:</span>{' '}
@@ -660,7 +650,7 @@ export default function RespuestasFormulariosPage() {
                   </div>
 
                   {detalle.formulario_descripcion && (
-                    <p className="text-sm text-gray-600 mb-4">{decodeUnicodeEscapes(detalle.formulario_descripcion)}</p>
+                    <p className="text-sm text-gray-600 mb-4">{normalizarTextoVisible(detalle.formulario_descripcion)}</p>
                   )}
 
                   {/* Preguntas + respuestas */}
@@ -671,7 +661,7 @@ export default function RespuestasFormulariosPage() {
                         return (
                           <div key={campo.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {index + 1}. {decodeUnicodeEscapes(campo.label)}
+                              {index + 1}. {normalizarTextoVisible(campo.label)}
                               {campo.required && <span className="text-red-500 ml-1">*</span>}
                             </label>
                             <div className="mt-1 p-3 bg-gray-50 rounded-lg">{renderRespuesta(campo, respuestasData)}</div>

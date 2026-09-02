@@ -1287,9 +1287,12 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
 
   /**
    * Obtiene mis formularios asignados (para pacientes)
-   * @param estado - Opcional: 'pendiente', 'completado', o 'todos'
+   * @param estado - Opcional: 'pendiente', 'completado', 'expirado' o 'todos'. El estado
+   *   'expirado' lo deriva el backend de `fecha_expiracion`; no está guardado en la base.
    */
-  async getMisFormulariosAsignados(estado?: 'pendiente' | 'completado' | 'todos'): Promise<FormularioAsignacionDetalle[]> {
+  async getMisFormulariosAsignados(
+    estado?: 'pendiente' | 'completado' | 'expirado' | 'todos'
+  ): Promise<FormularioAsignacionDetalle[]> {
     try {
       const params = estado ? `?estado=${estado}` : '';
       const response = await this.client.get<FormularioAsignacionDetalle[]>(

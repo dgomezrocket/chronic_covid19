@@ -24,8 +24,15 @@ export default function FormulariosIndex() {
   const cargar = useCallback(async (modo: 'inicial' | 'silencioso' = 'inicial') => {
     if (modo === 'inicial') setEstado('cargando');
     try {
-      const res = await apiClient.getMisFormulariosAsignados('pendiente');
-      setAsignaciones(res);
+      // Se piden 'todos' y no 'pendiente' porque el backend ahora deriva 'expirado' de
+      // `fecha_expiracion`: con el filtro del servidor los vencidos quedarían afuera y el
+      // paciente no se enteraría de que tenía un formulario que venció. Acá se muestran los
+      // que están abiertos más los vencidos (los completados y cancelados no van en esta
+      // pantalla; los completados se consultan desde "Mis respuestas").
+      const res = await apiClient.getMisFormulariosAsignados('todos');
+      setAsignaciones(
+        res.filter((a) => a.estado === 'pendiente' || a.estado === 'expirado'),
+      );
       setEstado('listo');
     } catch (e) {
       mensajeDeError(e); // registra el detalle solo en __DEV__
@@ -34,7 +41,7 @@ export default function FormulariosIndex() {
   }, []);
 
   // Carga inicial + recarga al volver a la pestaña (tras responder, el completado
-  // desaparece de pendientes): primera vez con spinner, luego en silencio.
+  // desaparece de la lista): primera vez con spinner, luego en silencio.
   useFocusEffect(
     useCallback(() => {
       cargar(yaCargo.current ? 'silencioso' : 'inicial');
@@ -95,13 +102,13 @@ export default function FormulariosIndex() {
       renderItem={({ item }) => (
         <FormularioCard
           asignacion={item}
-          vencida={estaVencida(item.fecha_expiracion)}
+          vencida={item.estado === 'expirado' || estaVencida(item.fecha_expiracion)}
           onResponder={() => router.push(`/formularios/${item.id}`)}
         />
       )}
       ListHeaderComponent={
         <Text variant="bodyMedium" style={[styles.muted, styles.subtitulo]}>
-          Formularios pendientes que te fueron asignados para seguimiento.
+          Formularios que te fueron asignados para seguimiento.
         </Text>
       }
       contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 32 }]}

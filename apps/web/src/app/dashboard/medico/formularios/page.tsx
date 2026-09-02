@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@chronic-covid19/api-client';
 import { FormularioListItem } from '@chronic-covid19/shared-types';
 import { useAuthStore } from '@/store/authStore';
+import { normalizarTextoVisible } from '@/lib/text';
 
 export default function FormulariosPage() {
   const router = useRouter();
@@ -162,7 +163,7 @@ export default function FormulariosPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h3 className="text-lg font-bold text-white line-clamp-2">
-                        {formulario.titulo || 'Sin título'}
+                        {normalizarTextoVisible(formulario.titulo) || 'Sin título'}
                       </h3>
                       <span className="inline-block mt-2 px-3 py-1 bg-white bg-opacity-20 text-white text-xs font-semibold rounded-full">
                         {formulario.tipo}
@@ -176,7 +177,7 @@ export default function FormulariosPage() {
                   {/* Descripción */}
                   {formulario.descripcion && (
                     <p className="text-gray-600 text-sm line-clamp-2">
-                      {formulario.descripcion}
+                      {normalizarTextoVisible(formulario.descripcion)}
                     </p>
                   )}
 

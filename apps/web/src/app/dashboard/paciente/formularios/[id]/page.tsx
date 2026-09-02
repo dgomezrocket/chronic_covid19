@@ -5,6 +5,8 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { apiClient } from '@chronic-covid19/api-client';
+import { normalizarTextoVisible } from '@/lib/text';
+import { estaVencida } from '@/lib/formularios';
 
 interface Campo {
   id: string;
@@ -97,7 +99,7 @@ export default function ResponderFormularioPage() {
     if (formulario) {
       for (const campo of formulario.campos) {
         if (campo.requerido && !respuestas[campo.id]) {
-          setError(`El campo "${campo.etiqueta}" es requerido`);
+          setError(`El campo "${normalizarTextoVisible(campo.etiqueta)}" es requerido`);
           return;
         }
       }
@@ -111,11 +113,33 @@ export default function ResponderFormularioPage() {
       router.push('/dashboard?success=formulario-completado');
     } catch (err: any) {
       console.error('Error enviando respuesta:', err);
+      // El `detail` del backend ya viene en español y listo para mostrar (por ejemplo
+      // "Este formulario venció el 18/08/2026...").
       setError(err.message || 'Error al enviar el formulario');
+      // Un 400 significa que la asignación cambió de estado desde que se cargó la página
+      // (venció o ya fue respondida). Se recarga para que se vea el aviso en vez del form.
+      if (err?.status === 400) {
+        cargarFormulario();
+      }
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Motivo por el que este formulario ya no admite respuestas, o null si está abierto.
+  // El backend rechaza estos casos con 400; acá se evita mostrar un form que no se puede
+  // enviar. Se recalcula en cada render, que es cuando importa.
+  const motivoBloqueo = (() => {
+    if (!formulario) return null;
+    if (formulario.estado === 'completado') return 'completado';
+    if (formulario.estado === 'cancelado') return 'cancelado';
+    if (formulario.estado === 'expirado' || estaVencida(formulario.fecha_expiracion)) {
+      return 'vencido';
+    }
+    return null;
+  })();
+
+  const vencido = motivoBloqueo === 'vencido';
 
   const renderCampo = (campo: Campo) => {
     switch (campo.tipo) {
@@ -125,7 +149,7 @@ export default function ResponderFormularioPage() {
           <input
             type="text"
             id={campo.id}
-            placeholder={campo.placeholder}
+            placeholder={normalizarTextoVisible(campo.placeholder)}
             value={respuestas[campo.id] || ''}
             onChange={(e) => handleInputChange(campo.id, e.target.value)}
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -139,7 +163,7 @@ export default function ResponderFormularioPage() {
           <input
             type="number"
             id={campo.id}
-            placeholder={campo.placeholder}
+            placeholder={normalizarTextoVisible(campo.placeholder)}
             value={respuestas[campo.id] || ''}
             onChange={(e) => handleInputChange(campo.id, e.target.value)}
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -151,7 +175,7 @@ export default function ResponderFormularioPage() {
         return (
           <textarea
             id={campo.id}
-            placeholder={campo.placeholder}
+            placeholder={normalizarTextoVisible(campo.placeholder)}
             value={respuestas[campo.id] || ''}
             onChange={(e) => handleInputChange(campo.id, e.target.value)}
             rows={4}
@@ -171,8 +195,10 @@ export default function ResponderFormularioPage() {
             required={campo.requerido}
           >
             <option value="">Seleccionar...</option>
+            {/* El `value` va crudo a propósito: es lo que se guarda y tiene que seguir
+                coincidiendo con `options`. Solo se normaliza el texto que se muestra. */}
             {campo.opciones?.map((opcion) => (
-              <option key={opcion} value={opcion}>{opcion}</option>
+              <option key={opcion} value={opcion}>{normalizarTextoVisible(opcion)}</option>
             ))}
           </select>
         );
@@ -210,7 +236,7 @@ export default function ResponderFormularioPage() {
           <input
             type="text"
             id={campo.id}
-            placeholder={campo.placeholder}
+            placeholder={normalizarTextoVisible(campo.placeholder)}
             value={respuestas[campo.id] || ''}
             onChange={(e) => handleInputChange(campo.id, e.target.value)}
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -286,24 +312,73 @@ export default function ResponderFormularioPage() {
             {/* Header del formulario */}
             <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                {formulario.formulario_titulo}
+                {normalizarTextoVisible(formulario.formulario_titulo)}
               </h1>
               {formulario.formulario_descripcion && (
-                <p className="text-gray-600">{formulario.formulario_descripcion}</p>
+                <p className="text-gray-600">
+                  {normalizarTextoVisible(formulario.formulario_descripcion)}
+                </p>
               )}
               <div className="flex flex-wrap gap-4 mt-4 text-sm text-gray-500">
                 <span>
                   📅 Asignado: {new Date(formulario.fecha_asignacion).toLocaleDateString('es-PY')}
                 </span>
                 {formulario.fecha_expiracion && (
-                  <span className={new Date(formulario.fecha_expiracion) < new Date() ? 'text-red-500' : ''}>
-                    ⏰ Vence: {new Date(formulario.fecha_expiracion).toLocaleDateString('es-PY')}
+                  <span className={vencido ? 'text-red-500 font-medium' : ''}>
+                    ⏰ {vencido ? 'Venció' : 'Vence'}:{' '}
+                    {new Date(formulario.fecha_expiracion).toLocaleDateString('es-PY')}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Formulario */}
+            {/* Si ya no se puede responder, se muestra el motivo en lugar del formulario:
+                el backend rechaza el envío con 400 y no tiene sentido dejarlo cargar. */}
+            {motivoBloqueo ? (
+              <div className="bg-white rounded-2xl shadow-lg p-6 text-center">
+                <div
+                  className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                    vencido ? 'bg-red-100' : 'bg-green-100'
+                  }`}
+                >
+                  <span className="text-3xl">{vencido ? '⏰' : '✅'}</span>
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                  {vencido
+                    ? 'Este formulario venció'
+                    : motivoBloqueo === 'completado'
+                      ? 'Ya respondiste este formulario'
+                      : 'Este formulario fue cancelado'}
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  {vencido
+                    ? `La fecha límite era el ${
+                        formulario.fecha_expiracion
+                          ? new Date(formulario.fecha_expiracion).toLocaleDateString('es-PY')
+                          : ''
+                      } y ya no puede responderse. Consultá con tu médico si necesitás completarlo.`
+                    : motivoBloqueo === 'completado'
+                      ? 'Podés consultar las respuestas que enviaste.'
+                      : 'Tu médico canceló esta asignación, no hace falta completarla.'}
+                </p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {motivoBloqueo === 'completado' && (
+                    <Link
+                      href={`/dashboard/paciente/formularios/${asignacionId}/respuesta`}
+                      className="px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 transition-colors"
+                    >
+                      Ver mi respuesta
+                    </Link>
+                  )}
+                  <Link
+                    href="/dashboard"
+                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+                  >
+                    Volver al Dashboard
+                  </Link>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6">
               {error && (
                 <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
@@ -315,7 +390,7 @@ export default function ResponderFormularioPage() {
                 {formulario.campos.map((campo) => (
                   <div key={campo.id}>
                     <label htmlFor={campo.id} className="block text-sm font-medium text-gray-700 mb-2">
-                      {campo.etiqueta}
+                      {normalizarTextoVisible(campo.etiqueta)}
                       {campo.requerido && <span className="text-red-500 ml-1">*</span>}
                     </label>
                     {renderCampo(campo)}
@@ -351,6 +426,7 @@ export default function ResponderFormularioPage() {
                 </button>
               </div>
             </form>
+            )}
           </>
         )}
       </main>
