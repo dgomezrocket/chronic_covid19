@@ -4,6 +4,11 @@ import { ActivityIndicator, Button, Snackbar, Text, useTheme } from 'react-nativ
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Formulario, FormularioAsignacionDetalle } from '@chronic-covid19/shared-types';
+import {
+  enviarRespuestaFormulario,
+  verificarEnvioFormulario,
+  type DependenciasEnvioFormulario,
+} from '@chronic-covid19/api-client';
 import { apiClient } from '../../../src/lib/api';
 import { mensajeDeError } from '../../../src/lib/errors';
 import {
@@ -11,6 +16,7 @@ import {
   validarFormulario,
   type RespuestasFormulario,
 } from '../../../src/lib/formularios';
+import { limpiarClaveEnvio, obtenerClaveEnvio } from '../../../src/lib/idempotencia';
 import { normalizarTextoVisible } from '../../../src/lib/text';
 import { PreguntaField } from '../../../src/components/formularios/PreguntaField';
 
@@ -22,6 +28,13 @@ type EstadoCarga =
   | 'vencido'
   | 'no-disponible'
   | 'listo';
+
+// Envolturas de flecha y no las funciones sueltas: los métodos del cliente usan `this`.
+const envio: DependenciasEnvioFormulario = {
+  responderFormulario: (asignacionId, respuestas, idempotencyKey) =>
+    apiClient.responderFormulario(asignacionId, respuestas, idempotencyKey),
+  getMiRespuestaFormulario: (asignacionId) => apiClient.getMiRespuestaFormulario(asignacionId),
+};
 
 export default function ResponderFormulario() {
   const theme = useTheme();
@@ -37,15 +50,17 @@ export default function ResponderFormulario() {
   const [enviando, setEnviando] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
+  // El envío salió pero no pudimos averiguar si se guardó. Mientras dure este estado no
+  // se permite otro POST: podría ser un segundo envío real.
+  const [sinConfirmar, setSinConfirmar] = useState(false);
+  const [verificando, setVerificando] = useState(false);
+
   // Guarda síncrona contra doble envío. El estado `enviando` no alcanza: el callback del
   // Alert lee el valor capturado en el closure de cuando se abrió el diálogo.
   const enviandoRef = useRef(false);
 
-  // Identifica este INTENTO de envío. Vive mientras la pantalla esté montada, así que
-  // todo reintento -- de la capa de red o del usuario tocando "Enviar" de nuevo -- manda
-  // la misma clave y el backend responde OK en vez de "ya respondiste este formulario".
-  // Sin dependencias nativas: sólo tiene que ser única dentro de una misma asignación.
-  const idempotencyKey = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  // Caché en memoria de la clave persistida, para no ir al disco en cada reintento.
+  const claveRef = useRef<string | null>(null);
 
   const volver = () => router.replace('/formularios');
 
@@ -104,8 +119,27 @@ export default function ResponderFormulario() {
     });
   };
 
+  /** La misma clave para todos los reintentos de esta asignación, incluso entre sesiones. */
+  const claveDeEnvio = async (id: number) => {
+    if (!claveRef.current) claveRef.current = await obtenerClaveEnvio(id);
+    return claveRef.current;
+  };
+
+  const finalizarConExito = async (id: number) => {
+    // El intento terminó: la clave ya no protege nada y no tiene sentido conservarla.
+    await limpiarClaveEnvio(id);
+    setSinConfirmar(false);
+    // El estado terminal se setea ANTES del Alert: si el paciente descarta el diálogo
+    // sin tocar OK, la pantalla igual muestra "ya fue completado" y no un formulario
+    // editable que lo invite a reenviar algo que ya se guardó.
+    setEstadoCarga('completado');
+    Alert.alert('Listo', 'Formulario enviado correctamente', [
+      { text: 'OK', onPress: volverConExito },
+    ]);
+  };
+
   const confirmarEnvio = async (respuestas: RespuestasFormulario) => {
-    if (!asignacion || enviandoRef.current) return;
+    if (!asignacion || enviandoRef.current || sinConfirmar) return;
     // Re-chequeo antes del envío definitivo.
     if (asignacion.estado !== 'pendiente' || estaVencida(asignacion.fecha_expiracion)) {
       setSnackbar('Este formulario ya no puede responderse.');
@@ -115,21 +149,41 @@ export default function ResponderFormulario() {
     setEnviando(true);
     try {
       // IMPORTANTE: se pasa el mapa PLANO; el api-client ya envuelve en { respuestas }.
-      await apiClient.responderFormulario(asignacion.id, respuestas, idempotencyKey.current);
-      // El estado terminal se setea ANTES del Alert: si el paciente descarta el diálogo
-      // sin tocar OK, la pantalla igual muestra "ya fue completado" y no un formulario
-      // editable que lo invite a reenviar algo que ya se guardó.
-      setEstadoCarga('completado');
-      Alert.alert('Listo', 'Formulario enviado correctamente', [
-        { text: 'OK', onPress: volverConExito },
-      ]);
-    } catch (e) {
-      const status = (e as { status?: unknown })?.status;
-      if (status === 400) {
-        // El backend rechazó por estado: ya respondido en otra sesión, vencido o
-        // cancelado. No es un problema de conexión y reintentar no lo arregla, así que
-        // se cierra el formulario en vez de mostrar un toast que se va solo.
-        const detalle = mensajeDeError(e, 'Este formulario ya no puede responderse.');
+      // Si la respuesta HTTP se pierde, `enviarRespuestaFormulario` le pregunta al
+      // servidor qué pasó en vez de dar el envío por fallido.
+      const resultado = await enviarRespuestaFormulario(envio, {
+        asignacionId: asignacion.id,
+        respuestas,
+        idempotencyKey: await claveDeEnvio(asignacion.id),
+      });
+
+      if (resultado.estado === 'guardado') {
+        // Vale igual si lo guardó este POST, un reenvío o un intento anterior cuya
+        // respuesta se perdió: para el paciente el formulario está enviado.
+        await finalizarConExito(asignacion.id);
+        return;
+      }
+
+      if (resultado.estado === 'indeterminado') {
+        // No sabemos si se guardó. No se afirma ninguna de las dos cosas y NO se
+        // rehabilita el envío: `enviandoRef` queda en true a propósito.
+        setSinConfirmar(true);
+        Alert.alert(
+          'No pudimos confirmar el envío',
+          'Tus respuestas pueden haberse guardado. No las envíes de nuevo todavía: ' +
+            'verificá el estado cuando recuperes la conexión.',
+        );
+        return;
+      }
+
+      if (resultado.motivo === 'rechazado') {
+        // El backend rechazó por estado: ya respondido, vencido o cancelado, y la
+        // verificación confirmó que no hay respuesta guardada. Reintentar no lo arregla,
+        // así que se cierra el formulario.
+        const detalle = mensajeDeError(
+          resultado.detalle,
+          'Este formulario ya no puede responderse.',
+        );
         setEstadoCarga(
           /respondiste/i.test(detalle)
             ? 'completado'
@@ -140,8 +194,18 @@ export default function ResponderFormulario() {
         Alert.alert('No se pudo enviar', detalle);
         return;
       }
-      // Error de red real: acá sí tiene sentido reintentar, y el reintento reusa la
-      // misma clave de idempotencia.
+
+      // Falla de red y el servidor confirma que NO se guardó: acá sí es correcto decir
+      // que no se envió, y el reintento reusa la misma clave.
+      enviandoRef.current = false;
+      setSnackbar(
+        mensajeDeError(
+          resultado.detalle,
+          'No pudimos enviar tus respuestas. Revisá tu conexión e intentá nuevamente.',
+        ),
+      );
+    } catch (e) {
+      // Sólo se llega acá por un error inesperado del propio cliente.
       enviandoRef.current = false;
       setSnackbar(
         mensajeDeError(
@@ -154,8 +218,35 @@ export default function ResponderFormulario() {
     }
   };
 
+  /** Reconsulta el estado real. Es una LECTURA: nunca vuelve a enviar el formulario. */
+  const verificarEnvio = async () => {
+    if (!asignacion || verificando) return;
+    setVerificando(true);
+    try {
+      const resultado = await verificarEnvioFormulario(envio, { asignacionId: asignacion.id });
+
+      if (resultado.estado === 'guardado') {
+        await finalizarConExito(asignacion.id);
+        return;
+      }
+
+      if (resultado.estado === 'no-guardado') {
+        // El servidor confirma que no hay nada guardado: recién ahora es seguro
+        // rehabilitar el envío, y el reintento reusa la misma clave.
+        setSinConfirmar(false);
+        enviandoRef.current = false;
+        setSnackbar('Tus respuestas no llegaron a guardarse. Podés enviarlas de nuevo.');
+        return;
+      }
+
+      setSnackbar('Seguimos sin poder verificar el envío. Intentá con mejor conexión.');
+    } finally {
+      setVerificando(false);
+    }
+  };
+
   const enviar = () => {
-    if (!formulario) return;
+    if (!formulario || sinConfirmar) return;
     const { ok, errores: errs, respuestas } = validarFormulario(formulario.preguntas, valores);
     setErrores(errs);
     if (!ok) {
@@ -253,16 +344,43 @@ export default function ResponderFormulario() {
           />
         ))}
 
-        <Button
-          mode="contained"
-          onPress={enviar}
-          loading={enviando}
-          disabled={enviando}
-          style={styles.button}
-          contentStyle={styles.buttonContent}
-        >
-          Enviar respuestas
-        </Button>
+        {sinConfirmar ? (
+          // Se conserva el formulario cargado a propósito: si la verificación termina
+          // diciendo que no se guardó, el paciente no tiene que volver a escribir nada.
+          <View style={styles.aviso}>
+            <Text variant="titleSmall" style={styles.avisoTitulo}>
+              No pudimos confirmar el envío
+            </Text>
+            <Text variant="bodyMedium" style={styles.muted}>
+              Tus respuestas pueden haberse guardado. Para no enviarlas dos veces,
+              verificá el estado cuando tengas conexión.
+            </Text>
+            <Button
+              mode="contained"
+              onPress={verificarEnvio}
+              loading={verificando}
+              disabled={verificando}
+              style={styles.button}
+              contentStyle={styles.buttonContent}
+            >
+              Verificar envío
+            </Button>
+            <Button mode="text" onPress={volver} disabled={verificando}>
+              Volver a Formularios
+            </Button>
+          </View>
+        ) : (
+          <Button
+            mode="contained"
+            onPress={enviar}
+            loading={enviando}
+            disabled={enviando}
+            style={styles.button}
+            contentStyle={styles.buttonContent}
+          >
+            Enviar respuestas
+          </Button>
+        )}
       </ScrollView>
 
       <Snackbar visible={!!snackbar} onDismiss={() => setSnackbar(null)} duration={3500}>
@@ -284,6 +402,15 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 16, backgroundColor: '#ffffff' },
   titulo: { color: '#1c5891' },
   muted: { color: '#6b7280' },
+  aviso: {
+    gap: 8,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  avisoTitulo: { color: '#9a3412' },
   button: { borderRadius: 12, marginTop: 12 },
   buttonContent: { paddingVertical: 6 },
 });

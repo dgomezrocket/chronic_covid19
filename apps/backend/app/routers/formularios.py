@@ -1,4 +1,8 @@
+import logging
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from typing import List, Optional
@@ -20,8 +24,21 @@ from app.utils.formularios import esta_vencida, estado_visible, inicio_de_hoy
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 
 # ========== HELPERS ==========
+
+def _clave_para_log(idempotency_key: Optional[str]) -> str:
+    """Prefijo de la clave de idempotencia, apto para logs.
+
+    Alcanza para correlacionar dos POST del mismo envio sin dejar el valor completo
+    escrito en un log que se retiene fuera de nuestra infraestructura.
+    """
+    if not idempotency_key:
+        return "sin-clave"
+    return f"{idempotency_key[:8]}~"
+
 
 def require_medico(current_user: dict = Depends(get_current_user)):
     """Verifica que el usuario sea médico"""
@@ -76,7 +93,14 @@ def obtener_mi_respuesta(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Obtiene la respuesta del paciente a una asignación completada (solo lectura)"""
+    """Obtiene la respuesta del paciente a una asignación completada (solo lectura).
+
+    Además de alimentar la pantalla "Mis respuestas", este endpoint es el ORÁCULO DE
+    RECONCILIACIÓN del envío: cuando el cliente pierde la respuesta HTTP del POST no sabe
+    si el dato se guardó, y pregunta acá. Por eso los códigos importan y no deben
+    cambiarse a la ligera: 200 = la respuesta existe; 400/404 = confirmadamente no existe;
+    cualquier otra cosa el cliente la trata como "no se pudo verificar".
+    """
     if current_user["rol"] != "paciente":
         raise HTTPException(status_code=403, detail="Solo pacientes pueden ver sus respuestas")
     
@@ -89,6 +113,10 @@ def obtener_mi_respuesta(
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
     
     if asignacion.estado != "completado":
+        logger.info(
+            "[FORM_SUBMIT][RECONCILIA] asignacion=%s paciente=%s resultado=no-completado estado=%s",
+            asignacion_id, current_user["id"], asignacion.estado,
+        )
         raise HTTPException(status_code=400, detail="Este formulario no ha sido completado")
     
     respuesta = db.query(RespuestaFormulario).filter(
@@ -96,8 +124,17 @@ def obtener_mi_respuesta(
     ).first()
     
     if not respuesta:
+        logger.warning(
+            "[FORM_SUBMIT][RECONCILIA] asignacion=%s paciente=%s resultado=sin-fila estado=completado",
+            asignacion_id, current_user["id"],
+        )
         raise HTTPException(status_code=404, detail="No se encontró la respuesta")
     
+    logger.info(
+        "[FORM_SUBMIT][RECONCILIA] asignacion=%s paciente=%s resultado=guardada",
+        asignacion_id, current_user["id"],
+    )
+
     # Obtener el formulario para incluir las preguntas
     formulario = asignacion.formulario
     
@@ -295,21 +332,44 @@ def responder_formulario(
     if current_user["rol"] != "paciente":
         raise HTTPException(status_code=403, detail="Solo pacientes pueden responder formularios")
 
+    inicio = time.monotonic()
+
     idempotency_key = data.get("idempotency_key")
     if idempotency_key is not None:
         idempotency_key = str(idempotency_key).strip()[:64] or None
+
+    clave = _clave_para_log(idempotency_key)
+
+    def transcurrido_ms() -> int:
+        return int((time.monotonic() - inicio) * 1000)
+
+    def rechazar(codigo: int, detalle: str, motivo: str) -> HTTPException:
+        """Loguea el rechazo y devuelve la excepción para que la levante quien llama."""
+        logger.warning(
+            "[FORM_SUBMIT][RECHAZADO] asignacion=%s clave=%s status=%s motivo=%s duration_ms=%s",
+            asignacion_id, clave, codigo, motivo, transcurrido_ms(),
+        )
+        return HTTPException(status_code=codigo, detail=detalle)
 
     # with_for_update serializa dos envíos concurrentes de la misma asignación (doble tap).
     # El dialecto SQLite omite el FOR UPDATE, así que los tests siguen funcionando igual.
     asignacion = db.query(FormularioAsignacion).filter(
         FormularioAsignacion.id == asignacion_id
     ).with_for_update().first()
-    
+
     if not asignacion:
-        raise HTTPException(status_code=404, detail="Asignación no encontrada")
-    
+        raise rechazar(404, "Asignación no encontrada", "no-encontrada")
+
     if asignacion.paciente_id != current_user["id"]:
-        raise HTTPException(status_code=403, detail="No tienes acceso a esta asignación")
+        raise rechazar(403, "No tienes acceso a esta asignación", "ajena")
+
+    # El log de entrada va acá y no antes: recién ahora sabemos el estado inicial, que es
+    # el dato que permite reconstruir después por qué un reenvío terminó como terminó.
+    # Nunca se loguea `respuestas`: son datos médicos del paciente.
+    logger.info(
+        "[FORM_SUBMIT][START] asignacion=%s clave=%s paciente=%s estado_inicial=%s",
+        asignacion_id, clave, current_user["id"], asignacion.estado,
+    )
 
     # Reenvío del mismo intento: ya está persistido, responder OK y no duplicar la fila.
     # Va antes de las guardas de estado/vencimiento porque el envío original fue válido;
@@ -320,26 +380,32 @@ def responder_formulario(
             RespuestaFormulario.idempotency_key == idempotency_key,
         ).first()
         if previa:
+            logger.info(
+                "[FORM_SUBMIT][RESPONSE] asignacion=%s clave=%s status=200 duplicado=true duration_ms=%s",
+                asignacion_id, clave, transcurrido_ms(),
+            )
             return {"message": "Respuesta guardada exitosamente", "duplicado": True}
 
     if asignacion.estado == "completado":
-        raise HTTPException(status_code=400, detail="Ya respondiste este formulario.")
+        raise rechazar(400, "Ya respondiste este formulario.", "ya-respondido")
 
     if asignacion.estado != "pendiente":
-        raise HTTPException(
-            status_code=400,
-            detail="Este formulario ya no está disponible para responder."
+        raise rechazar(
+            400,
+            "Este formulario ya no está disponible para responder.",
+            f"estado-{asignacion.estado}",
         )
 
     if esta_vencida(asignacion.fecha_expiracion):
-        raise HTTPException(
-            status_code=400,
-            detail=(
+        raise rechazar(
+            400,
+            (
                 f"Este formulario venció el "
                 f"{asignacion.fecha_expiracion.strftime('%d/%m/%Y')} y ya no puede responderse."
-            )
+            ),
+            "vencido",
         )
-    
+
     # Crear respuesta
     respuesta = RespuestaFormulario(
         paciente_id=current_user["id"],
@@ -348,15 +414,48 @@ def responder_formulario(
         respuestas=data.get("respuestas", {}),
         idempotency_key=idempotency_key,
     )
-    
+
     db.add(respuesta)
-    
+
     # Marcar asignación como completada
     asignacion.estado = "completado"
     asignacion.fecha_completado = datetime.utcnow()
-    
-    db.commit()
-    
+
+    try:
+        db.commit()
+    except IntegrityError:
+        # Sólo puede venir de uq_respuestas_asignacion_idempotency: otro request con la
+        # MISMA clave ganó la carrera. No es un error del paciente -- su respuesta está
+        # guardada --, así que se responde igual que un reenvío. Cubre el caso en que el
+        # lock de fila no alcance (por ejemplo si algún día se corre con réplicas de
+        # lectura o con un dialecto que ignore el FOR UPDATE).
+        db.rollback()
+        if idempotency_key:
+            previa = db.query(RespuestaFormulario).filter(
+                RespuestaFormulario.asignacion_id == asignacion_id,
+                RespuestaFormulario.idempotency_key == idempotency_key,
+            ).first()
+            if previa:
+                logger.info(
+                    "[FORM_SUBMIT][RESPONSE] asignacion=%s clave=%s status=200 duplicado=true "
+                    "via=integrity-error duration_ms=%s",
+                    asignacion_id, clave, transcurrido_ms(),
+                )
+                return {"message": "Respuesta guardada exitosamente", "duplicado": True}
+        logger.exception(
+            "[FORM_SUBMIT][ERROR] asignacion=%s clave=%s duration_ms=%s",
+            asignacion_id, clave, transcurrido_ms(),
+        )
+        raise
+
+    # Punto de no retorno: a partir de acá el dato ESTÁ guardado. Si el cliente no llega a
+    # ver la respuesta HTTP, la reconciliación contra `mi-respuesta` es la que se lo dice.
+    logger.info("[FORM_SUBMIT][COMMIT_OK] asignacion=%s clave=%s", asignacion_id, clave)
+    logger.info(
+        "[FORM_SUBMIT][RESPONSE] asignacion=%s clave=%s status=200 duplicado=false duration_ms=%s",
+        asignacion_id, clave, transcurrido_ms(),
+    )
+
     return {"message": "Respuesta guardada exitosamente", "duplicado": False}
 
 

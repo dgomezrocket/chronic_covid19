@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table, Boolean, text
+from sqlalchemy import Column, Integer, String, Date, Float, Enum, ForeignKey, DateTime, JSON, Text, Table, Boolean, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.db import Base
@@ -278,6 +278,19 @@ class FormularioAsignacion(Base):
 
 class RespuestaFormulario(Base):
     __tablename__ = "respuestas_formularios"
+    __table_args__ = (
+        # Una fila como mucho por INTENTO de envio. Es la ultima linea de defensa contra
+        # los reenvios del transporte: aunque dos POST concurrentes esquivaran el
+        # `with_for_update()` del endpoint, la base rechaza el segundo INSERT y el router
+        # lo convierte en la respuesta idempotente en vez de duplicar la respuesta.
+        # Postgres trata los NULL como distintos, asi que las filas historicas
+        # (`idempotency_key IS NULL`) no chocan entre si.
+        UniqueConstraint(
+            "asignacion_id",
+            "idempotency_key",
+            name="uq_respuestas_asignacion_idempotency",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False)

@@ -55,6 +55,19 @@ import {
   WebSocketTokenResponse,
 } from '@chronic-covid19/shared-types';
 
+// Envio de formularios con reconciliacion: un POST sin respuesta no significa que el
+// servidor no lo haya procesado. Ver envio-formulario.ts.
+export {
+  enviarRespuestaFormulario,
+  verificarEnvioFormulario,
+  esRespuestaPerdida,
+} from './envio-formulario';
+export type {
+  ResultadoEnvio,
+  DependenciasEnvioFormulario,
+  OpcionesEnvioFormulario,
+} from './envio-formulario';
+
 /**
  * Error de una llamada al API. Además del mensaje legible expone `status` y `detail`
  * para que la UI pueda distinguir "el servidor respondió y rechazó la operación" de

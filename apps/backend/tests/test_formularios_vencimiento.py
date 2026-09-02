@@ -11,11 +11,13 @@ El corte es al terminar el día de vencimiento: "vence hoy" todavía se puede re
 Corren sobre SQLite en memoria con `get_db` sobreescrito, así que no necesitan la base de
 Postgres ni la configuración de `tests/conftest.py`.
 """
+import logging
 from datetime import date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -404,3 +406,164 @@ def test_un_medico_no_puede_responder_por_el_paciente(entorno, client):
     )
 
     assert respuesta.status_code == 403, respuesta.text
+
+
+# ---------- integridad a nivel de base ----------
+
+def test_la_base_rechaza_una_segunda_fila_con_la_misma_clave(entorno, db_session):
+    """La unicidad de un intento no puede depender solo del código del endpoint.
+
+    `with_for_update()` serializa los envíos concurrentes, pero eso vive en Python. La
+    constraint es la que garantiza que ni siquiera un bug futuro pueda persistir dos
+    respuestas para el mismo intento.
+    """
+    asignacion = _asignar(entorno)
+    comun = dict(
+        paciente_id=entorno["paciente"].id,
+        formulario_id=entorno["formulario"].id,
+        asignacion_id=asignacion.id,
+        idempotency_key="k1",
+    )
+
+    db_session.add(RespuestaFormulario(respuestas={"q1": "Mejor"}, **comun))
+    db_session.commit()
+
+    db_session.add(RespuestaFormulario(respuestas={"q1": "Peor"}, **comun))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    assert db_session.query(RespuestaFormulario).count() == 1
+
+
+def test_las_filas_historicas_sin_clave_no_chocan_entre_si(entorno, db_session):
+    """La constraint no puede romper los datos viejos.
+
+    Las respuestas anteriores a la idempotencia tienen `idempotency_key = NULL`, y en SQL
+    los NULL son distintos entre sí: pueden convivir varias por asignación. Si esto
+    fallara, la migración reventaría el deploy en producción.
+    """
+    asignacion = _asignar(entorno)
+    comun = dict(
+        paciente_id=entorno["paciente"].id,
+        formulario_id=entorno["formulario"].id,
+        asignacion_id=asignacion.id,
+        idempotency_key=None,
+    )
+
+    db_session.add(RespuestaFormulario(respuestas={"q1": "Mejor"}, **comun))
+    db_session.add(RespuestaFormulario(respuestas={"q1": "Peor"}, **comun))
+    db_session.commit()
+
+    assert db_session.query(RespuestaFormulario).count() == 2
+
+
+def test_perder_la_carrera_contra_la_constraint_responde_duplicado(entorno, client, db_session):
+    """Dos POST concurrentes con la MISMA clave: el que pierde no puede devolver un 500.
+
+    Se simula la carrera que el lock de fila no llega a cubrir: el request entra, no
+    encuentra respuesta previa, y para cuando intenta commitear el otro ya insertó la
+    suya. La base rechaza el INSERT y el endpoint tiene que reconocer que el dato del
+    paciente igual quedó guardado.
+    """
+    asignacion = _asignar(entorno)
+    cuerpo = {"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"}
+
+    commit_real = db_session.commit
+    llamadas = {"n": 0}
+
+    def commit_perdiendo_la_carrera():
+        llamadas["n"] += 1
+        if llamadas["n"] > 1:
+            return commit_real()
+        # El otro request gana: su fila queda persistida...
+        db_session.rollback()
+        db_session.add(
+            RespuestaFormulario(
+                paciente_id=entorno["paciente"].id,
+                formulario_id=entorno["formulario"].id,
+                asignacion_id=asignacion.id,
+                respuestas={"q1": "Mejor"},
+                idempotency_key="k1",
+            )
+        )
+        commit_real()
+        # ...y la constraint rechaza la nuestra, igual que lo haría Postgres.
+        raise IntegrityError("INSERT INTO respuestas_formularios", {}, Exception("unique"))
+
+    db_session.commit = commit_perdiendo_la_carrera
+    try:
+        respuesta = client.post(
+            f"/formularios/asignaciones/{asignacion.id}/responder",
+            json=cuerpo,
+            headers=entorno["headers"],
+        )
+    finally:
+        db_session.commit = commit_real
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["duplicado"] is True
+    assert db_session.query(RespuestaFormulario).count() == 1
+
+
+# ---------- mi-respuesta como oráculo de reconciliación ----------
+
+def test_mi_respuesta_confirma_el_guardado(entorno, client):
+    """Contrato del que depende el cliente para reconciliar: 200 = la respuesta existe."""
+    asignacion = _asignar(entorno)
+    client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json={"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"},
+        headers=entorno["headers"],
+    )
+
+    respuesta = client.get(
+        f"/formularios/mis-asignaciones/{asignacion.id}/mi-respuesta",
+        headers=entorno["headers"],
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["respuestas"] == {"q1": "Mejor"}
+
+
+def test_mi_respuesta_niega_el_guardado_de_una_pendiente(entorno, client):
+    """La otra mitad del contrato: 400 = confirmadamente NO se guardó.
+
+    Si esto devolviera cualquier otro código el cliente lo trataría como "no pude
+    verificar" en vez de como un negativo, que es el modo de falla seguro.
+    """
+    asignacion = _asignar(entorno)
+
+    respuesta = client.get(
+        f"/formularios/mis-asignaciones/{asignacion.id}/mi-respuesta",
+        headers=entorno["headers"],
+    )
+
+    assert respuesta.status_code == 400, respuesta.text
+
+
+# ---------- logging ----------
+
+def test_el_log_del_envio_no_expone_las_respuestas_del_paciente(entorno, client, caplog):
+    """La trazabilidad no puede costar la confidencialidad de los datos médicos.
+
+    El log tiene que alcanzar para reconstruir un envío (asignación, clave, estado) sin
+    dejar escrito lo que el paciente respondió.
+    """
+    asignacion = _asignar(entorno)
+
+    with caplog.at_level(logging.INFO, logger="app.routers.formularios"):
+        client.post(
+            f"/formularios/asignaciones/{asignacion.id}/responder",
+            json={"respuestas": {"q1": "Peor"}, "idempotency_key": "clave-secreta-larga"},
+            headers=entorno["headers"],
+        )
+
+    texto = caplog.text
+    assert "[FORM_SUBMIT][START]" in texto
+    assert "[FORM_SUBMIT][COMMIT_OK]" in texto
+    assert "duplicado=false" in texto
+    # Ni las respuestas ni la clave completa quedan en el log.
+    assert "Peor" not in texto
+    assert "clave-secreta-larga" not in texto
+    assert "clave-se~" in texto
