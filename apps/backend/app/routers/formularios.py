@@ -287,19 +287,40 @@ def responder_formulario(
     Rechaza los envíos que ya no corresponden: de otro paciente, de una asignación ya
     respondida o cancelada, y de una cuya fecha límite pasó. Sin estas validaciones el
     bloqueo existía solo en la interfaz y se podía saltear llamando la API directo.
+
+    Es idempotente por ``idempotency_key``: si el cliente reenvía el MISMO intento
+    (la capa de red de Android reintenta el POST cuando muere una conexión keep-alive)
+    devuelve 200 en vez de un 400 engañoso, porque el dato ya quedó guardado.
     """
     if current_user["rol"] != "paciente":
         raise HTTPException(status_code=403, detail="Solo pacientes pueden responder formularios")
 
+    idempotency_key = data.get("idempotency_key")
+    if idempotency_key is not None:
+        idempotency_key = str(idempotency_key).strip()[:64] or None
+
+    # with_for_update serializa dos envíos concurrentes de la misma asignación (doble tap).
+    # El dialecto SQLite omite el FOR UPDATE, así que los tests siguen funcionando igual.
     asignacion = db.query(FormularioAsignacion).filter(
         FormularioAsignacion.id == asignacion_id
-    ).first()
+    ).with_for_update().first()
     
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
     
     if asignacion.paciente_id != current_user["id"]:
         raise HTTPException(status_code=403, detail="No tienes acceso a esta asignación")
+
+    # Reenvío del mismo intento: ya está persistido, responder OK y no duplicar la fila.
+    # Va antes de las guardas de estado/vencimiento porque el envío original fue válido;
+    # rechazarlo ahora le mostraría un error al paciente por un dato que sí se guardó.
+    if idempotency_key:
+        previa = db.query(RespuestaFormulario).filter(
+            RespuestaFormulario.asignacion_id == asignacion_id,
+            RespuestaFormulario.idempotency_key == idempotency_key,
+        ).first()
+        if previa:
+            return {"message": "Respuesta guardada exitosamente", "duplicado": True}
 
     if asignacion.estado == "completado":
         raise HTTPException(status_code=400, detail="Ya respondiste este formulario.")
@@ -324,7 +345,8 @@ def responder_formulario(
         paciente_id=current_user["id"],
         formulario_id=asignacion.formulario_id,
         asignacion_id=asignacion_id,
-        respuestas=data.get("respuestas", {})
+        respuestas=data.get("respuestas", {}),
+        idempotency_key=idempotency_key,
     )
     
     db.add(respuesta)
@@ -335,7 +357,7 @@ def responder_formulario(
     
     db.commit()
     
-    return {"message": "Respuesta guardada exitosamente"}
+    return {"message": "Respuesta guardada exitosamente", "duplicado": False}
 
 
 # ========== NUEVOS ENDPOINTS PARA VER RESPUESTAS ==========

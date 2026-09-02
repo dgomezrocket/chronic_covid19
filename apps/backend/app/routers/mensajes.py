@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from app.db.db import get_db
@@ -435,6 +436,52 @@ def crear_ws_token(
 
 # ========== WEBSOCKET PARA CHAT EN TIEMPO REAL ==========
 
+
+def _guardar_mensaje(
+    contenido: str,
+    paciente_id: int,
+    medico_id: int,
+    remitente_rol: str,
+    remitente_rol_enum: RolEnum,
+) -> dict:
+    """Persiste el mensaje y arma el payload del broadcast.
+
+    Sincrónica a propósito: la llama ``chat_websocket`` vía ``run_in_threadpool`` para
+    que el I/O de SQLAlchemy no bloquee el event loop.
+    """
+    from app.db.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        mensaje = Mensaje(
+            contenido=contenido,
+            paciente_id=paciente_id,
+            medico_id=medico_id,
+            timestamp=datetime.utcnow(),
+            leido=0,
+            remitente_rol=remitente_rol_enum,
+        )
+        db.add(mensaje)
+        db.commit()
+        db.refresh(mensaje)
+
+        # Obtener nombres para el broadcast
+        paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
+        medico = db.query(Medico).filter(Medico.id == medico_id).first()
+
+        return {
+            "id": mensaje.id,
+            "contenido": mensaje.contenido,
+            "timestamp": mensaje.timestamp.isoformat(),
+            "remitente_rol": remitente_rol,
+            "remitente_nombre": medico.nombre if remitente_rol == "medico" else paciente.nombre,
+            "paciente_id": paciente_id,
+            "medico_id": medico_id,
+        }
+    finally:
+        db.close()
+
+
 @router.websocket("/ws/{paciente_id}/{medico_id}")
 async def chat_websocket(
     websocket: WebSocket,
@@ -477,41 +524,21 @@ async def chat_websocket(
             if not contenido:
                 continue
 
-            # Guardar mensaje en la BD
-            from app.db.db import SessionLocal
-            db = SessionLocal()
-            try:
-                mensaje = Mensaje(
-                    contenido=contenido,
-                    paciente_id=paciente_id,
-                    medico_id=medico_id,
-                    timestamp=datetime.utcnow(),
-                    leido=0,
-                    remitente_rol=remitente_rol_enum
-                )
-                db.add(mensaje)
-                db.commit()
-                db.refresh(mensaje)
+            # La BD se toca con SQLAlchemy sincrónico, que bloquea el hilo. Corriéndolo
+            # acá adentro (esto es un `async def`) cada mensaje de chat congelaba el event
+            # loop y estancaba TODAS las requests HTTP concurrentes. run_in_threadpool lo
+            # saca del loop; en el loop sólo queda el broadcast, que sí es async.
+            response = await run_in_threadpool(
+                _guardar_mensaje,
+                contenido,
+                paciente_id,
+                medico_id,
+                remitente_rol,
+                remitente_rol_enum,
+            )
 
-                # Obtener nombres para el broadcast
-                paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
-                medico = db.query(Medico).filter(Medico.id == medico_id).first()
-
-                response = {
-                    "id": mensaje.id,
-                    "contenido": mensaje.contenido,
-                    "timestamp": mensaje.timestamp.isoformat(),
-                    "remitente_rol": remitente_rol,
-                    "remitente_nombre": medico.nombre if remitente_rol == "medico" else paciente.nombre,
-                    "paciente_id": paciente_id,
-                    "medico_id": medico_id
-                }
-
-                # Broadcast a todos en el chat
-                await manager.broadcast_to_chat(paciente_id, medico_id, response)
-
-            finally:
-                db.close()
+            # Broadcast a todos en el chat
+            await manager.broadcast_to_chat(paciente_id, medico_id, response)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, paciente_id, medico_id)

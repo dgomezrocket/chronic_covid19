@@ -285,6 +285,10 @@ class RespuestaFormulario(Base):
     asignacion_id = Column(Integer, ForeignKey("formulario_asignaciones.id"), nullable=True)
     respuestas = Column(JSON, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Identifica el INTENTO de envío, no la respuesta. Si la red reintenta el POST
+    # (OkHttp reenvía cuando muere una conexión keep-alive), el segundo pedido trae la
+    # misma clave y el endpoint responde OK en vez de un 400 "ya respondiste".
+    idempotency_key = Column(String(64), nullable=True, index=True)
 
     # Relaciones
     paciente = relationship("Paciente", back_populates="formularios")

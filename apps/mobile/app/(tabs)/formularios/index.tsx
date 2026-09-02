@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
-import { ActivityIndicator, Button, Text, useTheme } from 'react-native-paper';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { ActivityIndicator, Button, Snackbar, Text, useTheme } from 'react-native-paper';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { FormularioAsignacionDetalle } from '@chronic-covid19/shared-types';
 import { apiClient } from '../../../src/lib/api';
@@ -20,6 +20,19 @@ export default function FormulariosIndex() {
   const [asignaciones, setAsignaciones] = useState<FormularioAsignacionDetalle[]>([]);
   const [refrescando, setRefrescando] = useState(false);
   const yaCargo = useRef(false);
+
+  // La pantalla de respuesta navega acá con ?enviado=1 al guardar. La confirmación se
+  // muestra en la lista (y no solo en el Alert) para que el paciente vea el resultado
+  // junto al formulario que ya desapareció de sus pendientes.
+  const { enviado } = useLocalSearchParams<{ enviado?: string }>();
+  const [confirmacion, setConfirmacion] = useState(false);
+
+  useEffect(() => {
+    if (enviado !== '1') return;
+    setConfirmacion(true);
+    // Se limpia el parámetro para que no reaparezca al volver a enfocar la pestaña.
+    router.setParams({ enviado: undefined });
+  }, [enviado, router]);
 
   const cargar = useCallback(async (modo: 'inicial' | 'silencioso' = 'inicial') => {
     if (modo === 'inicial') setEstado('cargando');
@@ -55,72 +68,91 @@ export default function FormulariosIndex() {
     setRefrescando(false);
   }, [cargar]);
 
-  if (estado === 'cargando') {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.primary} accessibilityLabel="Cargando" />
-        <Text variant="bodyMedium" style={styles.muted}>
-          Cargando formularios…
-        </Text>
-      </View>
-    );
-  }
+  const renderContenido = () => {
+    if (estado === 'cargando') {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator
+            size="large"
+            color={theme.colors.primary}
+            accessibilityLabel="Cargando"
+          />
+          <Text variant="bodyMedium" style={styles.muted}>
+            Cargando formularios…
+          </Text>
+        </View>
+      );
+    }
 
-  if (estado === 'error') {
-    return (
-      <View style={styles.center}>
-        <Text variant="titleMedium" style={styles.muted}>
-          No pudimos cargar tus formularios.
-        </Text>
-        <Button
-          mode="contained"
-          onPress={() => cargar('inicial')}
-          style={styles.button}
-          contentStyle={styles.buttonContent}
-        >
-          Reintentar
-        </Button>
-      </View>
-    );
-  }
+    if (estado === 'error') {
+      return (
+        <View style={styles.center}>
+          <Text variant="titleMedium" style={styles.muted}>
+            No pudimos cargar tus formularios.
+          </Text>
+          <Button
+            mode="contained"
+            onPress={() => cargar('inicial')}
+            style={styles.button}
+            contentStyle={styles.buttonContent}
+          >
+            Reintentar
+          </Button>
+        </View>
+      );
+    }
 
-  if (asignaciones.length === 0) {
+    if (asignaciones.length === 0) {
+      return (
+        <View style={styles.center}>
+          <Text variant="titleMedium">No tienes formularios pendientes</Text>
+          <Text variant="bodyMedium" style={styles.muted}>
+            Cuando tu médico te asigne un formulario para completar, aparecerá aquí.
+          </Text>
+        </View>
+      );
+    }
+
     return (
-      <View style={styles.center}>
-        <Text variant="titleMedium">No tienes formularios pendientes</Text>
-        <Text variant="bodyMedium" style={styles.muted}>
-          Cuando tu médico te asigne un formulario para completar, aparecerá aquí.
-        </Text>
-      </View>
+      <FlatList
+        data={asignaciones}
+        keyExtractor={(a) => String(a.id)}
+        renderItem={({ item }) => (
+          <FormularioCard
+            asignacion={item}
+            vencida={item.estado === 'expirado' || estaVencida(item.fecha_expiracion)}
+            onResponder={() => router.push(`/formularios/${item.id}`)}
+          />
+        )}
+        ListHeaderComponent={
+          <Text variant="bodyMedium" style={[styles.muted, styles.subtitulo]}>
+            Formularios que te fueron asignados para seguimiento.
+          </Text>
+        }
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 32 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+      />
     );
-  }
+  };
 
   return (
-    <FlatList
-      data={asignaciones}
-      keyExtractor={(a) => String(a.id)}
-      renderItem={({ item }) => (
-        <FormularioCard
-          asignacion={item}
-          vencida={item.estado === 'expirado' || estaVencida(item.fecha_expiracion)}
-          onResponder={() => router.push(`/formularios/${item.id}`)}
-        />
-      )}
-      ListHeaderComponent={
-        <Text variant="bodyMedium" style={[styles.muted, styles.subtitulo]}>
-          Formularios que te fueron asignados para seguimiento.
-        </Text>
-      }
-      contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 32 }]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refrescando}
-          onRefresh={onRefresh}
-          colors={[theme.colors.primary]}
-          tintColor={theme.colors.primary}
-        />
-      }
-    />
+    <>
+      {renderContenido()}
+      <Snackbar
+        visible={confirmacion}
+        onDismiss={() => setConfirmacion(false)}
+        duration={3500}
+      >
+        Formulario enviado correctamente
+      </Snackbar>
+    </>
   );
 }
 

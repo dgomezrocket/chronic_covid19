@@ -280,6 +280,113 @@ def test_responder_sin_fecha_limite_sigue_funcionando(entorno, client, db_sessio
     assert guardada.asignacion_id == asignacion.id
 
 
+def test_reenvio_con_la_misma_clave_devuelve_ok_y_no_duplica(entorno, client, db_session):
+    """El reintento del MISMO envío ya no se ve como un error.
+
+    Reproduce el bug real: la capa de red de Android reenvía el POST cuando muere una
+    conexión keep-alive. El primero commiteaba `estado = 'completado'` y el segundo caía
+    en la guarda de "ya respondiste", así que el paciente veía un error aunque sus
+    respuestas SÍ estaban guardadas.
+    """
+    asignacion = _asignar(entorno)
+    cuerpo = {"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"}
+
+    primera = client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json=cuerpo,
+        headers=entorno["headers"],
+    )
+    assert primera.status_code == 200, primera.text
+    assert primera.json()["duplicado"] is False
+
+    segunda = client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json=cuerpo,
+        headers=entorno["headers"],
+    )
+    assert segunda.status_code == 200, segunda.text
+    assert segunda.json()["duplicado"] is True
+
+    # Una sola fila: el reenvío no guarda una respuesta extra.
+    guardada = db_session.query(RespuestaFormulario).one()
+    assert guardada.respuestas == {"q1": "Mejor"}
+    assert guardada.idempotency_key == "k1"
+
+
+def test_otra_clave_sigue_siendo_rechazada(entorno, client, db_session):
+    """La idempotencia no debe convertirse en "aceptar cualquier reenvío".
+
+    Un envío nuevo (clave distinta) es un intento genuino de responder dos veces y tiene
+    que seguir dando 400, para no descartar en silencio respuestas diferentes.
+    """
+    asignacion = _asignar(entorno)
+    client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json={"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"},
+        headers=entorno["headers"],
+    )
+
+    otra = client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json={"respuestas": {"q1": "Peor"}, "idempotency_key": "k2"},
+        headers=entorno["headers"],
+    )
+
+    assert otra.status_code == 400, otra.text
+    assert otra.json()["detail"] == "Ya respondiste este formulario."
+    assert db_session.query(RespuestaFormulario).count() == 1
+
+
+def test_clave_de_otra_asignacion_no_se_reusa(entorno, client, db_session):
+    """La clave se busca por asignación: la misma clave en otra asignación no matchea."""
+    primera_asignacion = _asignar(entorno)
+    segunda_asignacion = _asignar(entorno)
+
+    client.post(
+        f"/formularios/asignaciones/{primera_asignacion.id}/responder",
+        json={"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"},
+        headers=entorno["headers"],
+    )
+    respuesta = client.post(
+        f"/formularios/asignaciones/{segunda_asignacion.id}/responder",
+        json={"respuestas": {"q1": "Igual"}, "idempotency_key": "k1"},
+        headers=entorno["headers"],
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["duplicado"] is False
+    assert db_session.query(RespuestaFormulario).count() == 2
+
+
+def test_reenvio_de_formulario_vencido_no_revive_el_error(entorno, client, db_session):
+    """Si el envío original entró a tiempo, el reintento no debe fallar por vencimiento.
+
+    Escenario borde real: el paciente envía justo antes del corte, la red reintenta y para
+    entonces la asignación ya venció. El dato está guardado, así que responder 400 sería
+    mentirle.
+    """
+    asignacion = _asignar(entorno)
+    cuerpo = {"respuestas": {"q1": "Mejor"}, "idempotency_key": "k1"}
+    client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json=cuerpo,
+        headers=entorno["headers"],
+    )
+
+    asignacion.fecha_expiracion = datetime.combine(date.today() - timedelta(days=3), time.min)
+    db_session.commit()
+
+    reenvio = client.post(
+        f"/formularios/asignaciones/{asignacion.id}/responder",
+        json=cuerpo,
+        headers=entorno["headers"],
+    )
+
+    assert reenvio.status_code == 200, reenvio.text
+    assert reenvio.json()["duplicado"] is True
+    assert db_session.query(RespuestaFormulario).count() == 1
+
+
 def test_un_medico_no_puede_responder_por_el_paciente(entorno, client):
     """El endpoint no validaba rol: alcanzaba con que el id coincidiera con paciente_id."""
     asignacion = _asignar(entorno)

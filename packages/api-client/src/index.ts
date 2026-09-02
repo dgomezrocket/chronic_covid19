@@ -1319,16 +1319,26 @@ async buscarPaciente(query: string, soloSinHospital: boolean = false): Promise<B
   }
 
   /**
-   * Envía respuesta a un formulario asignado
+   * Envía respuesta a un formulario asignado.
+   *
+   * `idempotencyKey` identifica el INTENTO de envío. Si se manda la misma clave dos
+   * veces (porque la red reintentó el POST por debajo, o porque el usuario volvió a
+   * tocar "Enviar" tras un error de conexión) el backend responde 200 con
+   * `duplicado: true` en vez de un 400 "ya respondiste", que era lo que hacía aparecer
+   * un error aunque las respuestas sí se hubieran guardado. Es opcional: sin clave el
+   * comportamiento es el de siempre.
    */
   async responderFormulario(
     asignacionId: number,
-    respuestas: Record<string, any>
-  ): Promise<{ message: string }> {
+    respuestas: Record<string, any>,
+    idempotencyKey?: string
+  ): Promise<{ message: string; duplicado?: boolean }> {
     try {
-      const response = await this.client.post<{ message: string }>(
+      const body: Record<string, any> = { respuestas };
+      if (idempotencyKey) body.idempotency_key = idempotencyKey;
+      const response = await this.client.post<{ message: string; duplicado?: boolean }>(
         `/formularios/asignaciones/${asignacionId}/responder`,
-        { respuestas }
+        body
       );
       return response.data;
     } catch (error) {

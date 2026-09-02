@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { ActivityIndicator, Button, Snackbar, Text, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -37,7 +37,20 @@ export default function ResponderFormulario() {
   const [enviando, setEnviando] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
+  // Guarda síncrona contra doble envío. El estado `enviando` no alcanza: el callback del
+  // Alert lee el valor capturado en el closure de cuando se abrió el diálogo.
+  const enviandoRef = useRef(false);
+
+  // Identifica este INTENTO de envío. Vive mientras la pantalla esté montada, así que
+  // todo reintento -- de la capa de red o del usuario tocando "Enviar" de nuevo -- manda
+  // la misma clave y el backend responde OK en vez de "ya respondiste este formulario".
+  // Sin dependencias nativas: sólo tiene que ser única dentro de una misma asignación.
+  const idempotencyKey = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
   const volver = () => router.replace('/formularios');
+
+  const volverConExito = () =>
+    router.replace({ pathname: '/formularios', params: { enviado: '1' } });
 
   const cargar = useCallback(async () => {
     setEstadoCarga('cargando');
@@ -92,20 +105,44 @@ export default function ResponderFormulario() {
   };
 
   const confirmarEnvio = async (respuestas: RespuestasFormulario) => {
-    if (!asignacion || enviando) return;
+    if (!asignacion || enviandoRef.current) return;
     // Re-chequeo antes del envío definitivo.
     if (asignacion.estado !== 'pendiente' || estaVencida(asignacion.fecha_expiracion)) {
       setSnackbar('Este formulario ya no puede responderse.');
       return;
     }
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       // IMPORTANTE: se pasa el mapa PLANO; el api-client ya envuelve en { respuestas }.
-      await apiClient.responderFormulario(asignacion.id, respuestas);
+      await apiClient.responderFormulario(asignacion.id, respuestas, idempotencyKey.current);
+      // El estado terminal se setea ANTES del Alert: si el paciente descarta el diálogo
+      // sin tocar OK, la pantalla igual muestra "ya fue completado" y no un formulario
+      // editable que lo invite a reenviar algo que ya se guardó.
+      setEstadoCarga('completado');
       Alert.alert('Listo', 'Formulario enviado correctamente', [
-        { text: 'OK', onPress: volver },
+        { text: 'OK', onPress: volverConExito },
       ]);
     } catch (e) {
+      const status = (e as { status?: unknown })?.status;
+      if (status === 400) {
+        // El backend rechazó por estado: ya respondido en otra sesión, vencido o
+        // cancelado. No es un problema de conexión y reintentar no lo arregla, así que
+        // se cierra el formulario en vez de mostrar un toast que se va solo.
+        const detalle = mensajeDeError(e, 'Este formulario ya no puede responderse.');
+        setEstadoCarga(
+          /respondiste/i.test(detalle)
+            ? 'completado'
+            : /venci/i.test(detalle)
+              ? 'vencido'
+              : 'no-disponible',
+        );
+        Alert.alert('No se pudo enviar', detalle);
+        return;
+      }
+      // Error de red real: acá sí tiene sentido reintentar, y el reintento reusa la
+      // misma clave de idempotencia.
+      enviandoRef.current = false;
       setSnackbar(
         mensajeDeError(
           e,

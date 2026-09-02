@@ -36,7 +36,17 @@ def init_engine(force: bool = False) -> None:
     if database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
 
-    engine = create_engine(database_url, connect_args=connect_args)
+    # pool_pre_ping: descarta conexiones muertas antes de usarlas. Sin esto, una conexión
+    # rancia del pool (Postgres gestionado cierra las ociosas) dejaba el request colgado
+    # hasta el timeout TCP del SO, muy por encima de los 30 s del cliente: el usuario veía
+    # "no se pudo conectar" aunque el servidor terminara procesando el pedido.
+    # pool_recycle las renueva antes de que el otro extremo las cierre.
+    engine = create_engine(
+        database_url,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
