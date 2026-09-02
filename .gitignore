@@ -48,3 +48,7 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+# Scaffold vacío de create-next-app en la raíz: la app web real es apps/web (es la que
+# construye vercel.json con `pnpm --filter web build`) y esta carpeta no está en el
+# workspace de pnpm. Se ignora para que no se cuele en un `git add .`.
+/web/
