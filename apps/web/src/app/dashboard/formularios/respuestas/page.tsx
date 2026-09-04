@@ -19,6 +19,27 @@ const LIMIT = 50;
 
 type EstadoFiltro = 'todos' | 'pendiente' | 'completado' | 'expirado';
 
+type FilaRespuesta = {
+  item: ResumenRespuestaItem;
+  nombre: string;
+  titulo: string;
+  navegable: boolean;
+};
+
+// Fecha sin hora, para las líneas secundarias de la tabla compacta.
+const formatDateCorto = (value?: string | null) => {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('es-PY', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+// Única definición de "esta asignación tiene una respuesta consultable".
+const tieneRespuestaVisible = (it: ResumenRespuestaItem) =>
+  it.estado === 'completado' && it.tiene_respuesta;
+
 export default function RespuestasFormulariosPage() {
   const router = useRouter();
   const { user, isAuthenticated, token, logout } = useAuthStore();
@@ -41,14 +62,13 @@ export default function RespuestasFormulariosPage() {
   const [hospitales, setHospitales] = useState<Hospital[]>([]);
   const [medicos, setMedicos] = useState<Medico[]>([]);
 
-  // Modal "Ver respuesta"
-  const [showModal, setShowModal] = useState(false);
+  // Modal "Ver respuesta" (guardamos el id activo para poder navegar entre respuestas)
+  const [asignacionActiva, setAsignacionActiva] = useState<number | null>(null);
   const [detalle, setDetalle] = useState<RespuestaFormularioDetalle | null>(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [errorDetalle, setErrorDetalle] = useState<string | null>(null);
 
   const isAdmin = user?.rol === RolEnum.ADMIN;
-  const isMedico = user?.rol === RolEnum.MEDICO;
 
   // ---------- Guardas de acceso ----------
   useEffect(() => {
@@ -130,12 +150,90 @@ export default function RespuestasFormulariosPage() {
     };
   }, [token, user, search, estado, medicoId, hospitalId, skip, isAdmin]);
 
+  // ---------- Cargar el detalle de la asignación activa ----------
+  useEffect(() => {
+    if (asignacionActiva == null) return;
+
+    let activo = true;
+    const cargar = async () => {
+      try {
+        setLoadingDetalle(true);
+        setErrorDetalle(null);
+        setDetalle(null);
+        const data = await apiClient.getRespuestaFormularioDetalle(asignacionActiva);
+        if (!activo) return;
+        setDetalle(data);
+      } catch (err) {
+        if (!activo) return;
+        setErrorDetalle(err instanceof Error ? err.message : 'Error al cargar la respuesta');
+      } finally {
+        if (activo) setLoadingDetalle(false);
+      }
+    };
+
+    cargar();
+    return () => {
+      activo = false;
+    };
+  }, [asignacionActiva]);
+
   // Médicos disponibles según el hospital seleccionado (admin)
   const medicosFiltrados = useMemo(() => {
     if (!hospitalId) return medicos;
     const hid = Number(hospitalId);
     return medicos.filter((m) => (m.hospitales || []).some((h) => h.id === hid));
   }, [medicos, hospitalId]);
+
+  // Modelo de fila derivado: una sola pasada, reutilizable por tabla y navegación.
+  const filas = useMemo<FilaRespuesta[]>(
+    () =>
+      items.map((item) => ({
+        item,
+        nombre:
+          normalizarTextoVisible(item.paciente_nombre || '') || `Paciente #${item.paciente_id}`,
+        titulo:
+          normalizarTextoVisible(item.formulario_titulo || '') ||
+          `Formulario #${item.formulario_id}`,
+        navegable: tieneRespuestaVisible(item),
+      })),
+    [items],
+  );
+
+  // ---------- Navegación entre respuestas (dentro de la página actual) ----------
+  // Deriva de `filas`, así que respeta los filtros activos por construcción.
+  const navegables = useMemo(() => filas.filter((f) => f.navegable), [filas]);
+
+  const indiceActivo = useMemo(
+    () =>
+      asignacionActiva == null
+        ? -1
+        : navegables.findIndex((f) => f.item.asignacion_id === asignacionActiva),
+    [navegables, asignacionActiva],
+  );
+
+  const puedeRespuestaAnterior = indiceActivo > 0;
+  const puedeRespuestaSiguiente = indiceActivo >= 0 && indiceActivo < navegables.length - 1;
+
+  const irARespuesta = (delta: -1 | 1) => {
+    if (indiceActivo < 0) return;
+    const destino = navegables[indiceActivo + delta];
+    if (destino) setAsignacionActiva(destino.item.asignacion_id);
+  };
+
+  // Atajos ← → mientras el modal está abierto.
+  // Las tres dependencias son necesarias: sin `indiceActivo` ni `navegables` el
+  // listener queda congelado en el primer índice y las flechas dejan de avanzar.
+  useEffect(() => {
+    if (asignacionActiva == null) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') irARespuesta(-1);
+      else if (e.key === 'ArrowRight') irARespuesta(1);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [asignacionActiva, indiceActivo, navegables]);
 
   const handleLogout = () => {
     logout();
@@ -204,24 +302,11 @@ export default function RespuestasFormulariosPage() {
       .map((parte) => parte.charAt(0).toUpperCase())
       .join('') || 'P';
 
-  // ---------- Modal: cargar detalle ----------
-  const verRespuesta = async (asignacionId: number) => {
-    try {
-      setShowModal(true);
-      setLoadingDetalle(true);
-      setErrorDetalle(null);
-      setDetalle(null);
-      const data = await apiClient.getRespuestaFormularioDetalle(asignacionId);
-      setDetalle(data);
-    } catch (err) {
-      setErrorDetalle(err instanceof Error ? err.message : 'Error al cargar la respuesta');
-    } finally {
-      setLoadingDetalle(false);
-    }
-  };
+  // ---------- Modal: abrir / cerrar (el fetch vive en su propio efecto) ----------
+  const verRespuesta = (asignacionId: number) => setAsignacionActiva(asignacionId);
 
   const cerrarModal = () => {
-    setShowModal(false);
+    setAsignacionActiva(null);
     setDetalle(null);
     setErrorDetalle(null);
   };
@@ -478,7 +563,7 @@ export default function RespuestasFormulariosPage() {
                 <p className="text-sm text-red-700">{error}</p>
               </div>
             </div>
-          ) : items.length === 0 ? (
+          ) : filas.length === 0 ? (
             <div className="py-16 text-center px-6">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -492,74 +577,115 @@ export default function RespuestasFormulariosPage() {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px]">
+                <table className="w-full table-fixed min-w-[680px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Paciente</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">CI / Documento</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Formulario</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Médico</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Hospital</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">F. Asignación</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">F. Respuesta</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Acción</th>
+                      <th className="w-[26%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Paciente</th>
+                      <th className="w-[24%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Formulario</th>
+                      <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
+                      <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {isAdmin ? 'Médico / Hospital' : 'Hospital'}
+                      </th>
+                      <th className="w-[14%] px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {items.map((item) => {
-                      const nombre = normalizarTextoVisible(item.paciente_nombre || '') || `Paciente #${item.paciente_id}`;
-                      return (
-                        <tr key={item.asignacion_id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                {getInitials(nombre)}
-                              </div>
-                              <span className="text-sm font-medium text-gray-900">{nombre}</span>
+                    {filas.map(({ item, nombre, titulo, navegable }) => (
+                      <tr
+                        key={item.asignacion_id}
+                        onClick={
+                          navegable
+                            ? () => {
+                                // No abrir el modal si se estaba seleccionando texto (p. ej. copiar un CI).
+                                if (window.getSelection()?.toString()) return;
+                                verRespuesta(item.asignacion_id);
+                              }
+                            : undefined
+                        }
+                        className={`transition-colors ${
+                          navegable ? 'cursor-pointer hover:bg-green-50' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        {/* Paciente + CI */}
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center space-x-2.5">
+                            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                              {getInitials(nombre)}
                             </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {item.paciente_documento || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {normalizarTextoVisible(item.formulario_titulo || '') || `Formulario #${item.formulario_id}`}
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate" title={nombre}>
+                                {nombre}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {item.paciente_documento || '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Formulario + F. Asignación */}
+                        <td className="px-3 py-2.5">
+                          <p className="text-sm text-gray-900 truncate" title={titulo}>
+                            {titulo}
                             {item.numero_instancia > 1 && (
-                              <span className="ml-2 text-xs text-gray-400">#{item.numero_instancia}</span>
+                              <span className="ml-1.5 text-xs text-gray-400">#{item.numero_instancia}</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getEstadoBadge(item.estado)}`}>
-                              {getEstadoLabel(item.estado)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {normalizarTextoVisible(item.medico_nombre || '') || '—'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            Asignado: {formatDateCorto(item.fecha_asignacion)}
+                          </p>
+                        </td>
+
+                        {/* Estado + F. Respuesta */}
+                        <td className="px-3 py-2.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${getEstadoBadge(item.estado)}`}>
+                            {getEstadoLabel(item.estado)}
+                          </span>
+                          {item.fecha_completado && (
+                            <p className="mt-1 text-xs text-gray-500 truncate">
+                              Respondido: {formatDateCorto(item.fecha_completado)}
+                            </p>
+                          )}
+                        </td>
+
+                        {/* Médico / Hospital — único punto de ramificación por rol en la tabla */}
+                        <td className="px-3 py-2.5">
+                          {isAdmin && (
+                            <p
+                              className="text-sm text-gray-700 truncate"
+                              title={normalizarTextoVisible(item.medico_nombre || '')}
+                            >
+                              {normalizarTextoVisible(item.medico_nombre || '') || '—'}
+                            </p>
+                          )}
+                          <p
+                            className={`truncate ${isAdmin ? 'text-xs text-gray-500' : 'text-sm text-gray-700'}`}
+                            title={normalizarTextoVisible(item.hospital_nombre || '')}
+                          >
                             {normalizarTextoVisible(item.hospital_nombre || '') || '—'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {formatDate(item.fecha_asignacion)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {formatDate(item.fecha_completado)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {item.estado === 'completado' && item.tiene_respuesta ? (
-                              <button
-                                onClick={() => verRespuesta(item.asignacion_id)}
-                                className="px-3 py-1 bg-green-50 text-green-700 rounded-lg text-sm font-semibold hover:bg-green-100 transition-colors"
-                              >
-                                Ver respuesta
-                              </button>
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          </p>
+                        </td>
+
+                        {/* Acción */}
+                        <td className="px-3 py-2.5 text-right">
+                          {navegable ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                verRespuesta(item.asignacion_id);
+                              }}
+                              aria-label={`Ver respuesta de ${nombre} — ${titulo}`}
+                              className="px-3 py-1 bg-green-50 text-green-700 rounded-lg text-sm font-semibold hover:bg-green-100 transition-colors whitespace-nowrap"
+                            >
+                              Ver
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -592,7 +718,7 @@ export default function RespuestasFormulariosPage() {
       </main>
 
       {/* Modal Ver respuesta */}
-      {showModal && (
+      {asignacionActiva !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={cerrarModal}>
           <div
             className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
@@ -677,7 +803,40 @@ export default function RespuestasFormulariosPage() {
             </div>
 
             {/* Footer modal */}
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3">
+              {navegables.length > 1 && indiceActivo >= 0 ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => irARespuesta(-1)}
+                    disabled={!puedeRespuestaAnterior}
+                    aria-label="Respuesta anterior"
+                    title="Respuesta anterior (←)"
+                    className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => irARespuesta(1)}
+                    disabled={!puedeRespuestaSiguiente}
+                    aria-label="Respuesta siguiente"
+                    title="Respuesta siguiente (→)"
+                    className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  <span className="ml-1 text-xs text-gray-500 whitespace-nowrap">
+                    {indiceActivo + 1} de {navegables.length}
+                  </span>
+                </div>
+              ) : (
+                <span />
+              )}
               <button onClick={cerrarModal} className="btn btn-secondary">
                 Cerrar
               </button>
