@@ -4,6 +4,9 @@ import {
   RegisterPacienteData,
   RegisterMedicoData,
   MedicoImportResult,
+  MedicoGestionCreateData,
+  MedicoGestionUpdateData,
+  MedicoGestionCreateResult,
   TokenResponse,
   RegistrationPendingVerificationResponse,
   Paciente,
@@ -893,6 +896,61 @@ clearToken() {
         : '/coordinadores/me/medicos';
 
       const response = await this.client.get<Medico[]>(url);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Crea un médico en el hospital del coordinador (F21).
+   *
+   * No se envía contraseña ni hospital: el backend genera una contraseña temporal y
+   * deriva el hospital del token. Devuelve el médico y el estado del correo de
+   * bienvenida, porque un fallo de SMTP no deshace el alta.
+   */
+  async createMedicoCoordinador(
+    data: MedicoGestionCreateData
+  ): Promise<MedicoGestionCreateResult> {
+    try {
+      const response = await this.client.post<MedicoGestionCreateResult>(
+        '/coordinadores/me/medicos',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Obtiene un médico del hospital del coordinador.
+   * Responde 403 si el médico pertenece a otro hospital.
+   */
+  async getCoordinadorMedico(medicoId: number): Promise<Medico> {
+    try {
+      const response = await this.client.get<Medico>(
+        `/coordinadores/me/medicos/${medicoId}`
+      );
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Actualiza un médico del hospital del coordinador.
+   * No permite tocar el rol, la contraseña ni los hospitales.
+   */
+  async updateCoordinadorMedico(
+    medicoId: number,
+    data: MedicoGestionUpdateData
+  ): Promise<Medico> {
+    try {
+      const response = await this.client.put<Medico>(
+        `/coordinadores/me/medicos/${medicoId}`,
+        data
+      );
       return response.data;
     } catch (error) {
       throw this.handleError(error);

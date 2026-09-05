@@ -31,24 +31,40 @@ def generar_password_temporal() -> str:
     return "".join(str(secrets.randbelow(10)) for _ in range(8))
 
 
-def email_en_uso(db: Session, email: str) -> bool:
+def email_en_uso(db: Session, email: str, *, excluir_medico_id: Optional[int] = None) -> bool:
     """
     True si el email ya está usado por un médico o un paciente.
 
     Sin distinguir mayúsculas/minúsculas: el email es la credencial de login y el login
     lo compara normalizado, así que 'Juan@x.com' y 'juan@x.com' son la misma cuenta.
+
+    `excluir_medico_id` es para la edición: el médico que se está editando no cuenta
+    como conflicto consigo mismo. La búsqueda en pacientes NUNCA se excluye, porque el
+    email de un médico jamás puede coincidir legítimamente con el de un paciente.
     """
     objetivo = normalizar_email(email)
-    if db.query(Medico).filter(func.lower(Medico.email) == objetivo).first():
+
+    query_medicos = db.query(Medico).filter(func.lower(Medico.email) == objetivo)
+    if excluir_medico_id is not None:
+        query_medicos = query_medicos.filter(Medico.id != excluir_medico_id)
+    if query_medicos.first():
         return True
+
     if db.query(Paciente).filter(func.lower(Paciente.email) == objetivo).first():
         return True
     return False
 
 
-def documento_en_uso(db: Session, documento: str) -> bool:
-    """True si el documento ya está usado por un médico."""
-    return db.query(Medico).filter(Medico.documento == documento).first() is not None
+def documento_en_uso(db: Session, documento: str, *, excluir_medico_id: Optional[int] = None) -> bool:
+    """
+    True si el documento ya está usado por un médico.
+
+    `excluir_medico_id` es para la edición (ver `email_en_uso`).
+    """
+    query = db.query(Medico).filter(Medico.documento == documento)
+    if excluir_medico_id is not None:
+        query = query.filter(Medico.id != excluir_medico_id)
+    return query.first() is not None
 
 
 def resolver_especialidades_por_id(db: Session, especialidad_ids: List[int]) -> List[Especialidad]:

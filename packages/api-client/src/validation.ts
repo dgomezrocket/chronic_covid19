@@ -108,6 +108,32 @@ export const updateMedicoSchema = z.object({
 
 export type UpdateMedicoFormData = z.infer<typeof updateMedicoSchema>;
 
+// ========== F21: MÉDICO GESTIONADO POR EL COORDINADOR ==========
+// Nunca hay campo de contraseña: el backend genera una temporal y la envía por correo.
+// El coordinador SÍ puede editar el documento, a diferencia de `updateMedicoSchema`,
+// que respalda el autoservicio del médico (ahí el documento es de solo lectura).
+export const createMedicoCoordinadorSchema = z.object({
+  documento: z.string().min(1, 'El documento es requerido'),
+  nombre: z.string().min(1, 'El nombre es requerido'),
+  email: z.string().email('Email inválido'),
+  telefono: z.string().optional(),
+  especialidad_ids: z.array(z.number()).optional().default([]),
+});
+
+export type CreateMedicoCoordinadorFormData = z.infer<typeof createMedicoCoordinadorSchema>;
+
+// El formulario de edición viene precargado y se envía completo, así que valida los
+// mismos campos como requeridos. El schema del backend sigue siendo parcial.
+export const updateMedicoCoordinadorSchema = z.object({
+  documento: z.string().min(1, 'El documento es requerido'),
+  nombre: z.string().min(1, 'El nombre es requerido'),
+  email: z.string().email('Email inválido'),
+  telefono: z.string().optional(),
+  especialidad_ids: z.array(z.number()).optional().default([]),
+});
+
+export type UpdateMedicoCoordinadorFormData = z.infer<typeof updateMedicoCoordinadorSchema>;
+
 
 // ========== UPDATE ADMIN SCHEMA ==========
 export const updateAdminSchema = z.object({

@@ -275,6 +275,25 @@ def obtener_coordinador_actual(
     return coordinador
 
 
+def obtener_coordinador_con_hospital(
+    db: Session,
+    current_user: dict
+) -> Coordinador:
+    """
+    Obtiene el coordinador autenticado y exige que tenga un hospital asignado.
+
+    Es el punto único desde el que se deriva el hospital en las operaciones del
+    coordinador: el hospital NUNCA viaja en el request (body, query ni Excel).
+    """
+    coordinador = obtener_coordinador_actual(db, current_user)  # 403 si no es coordinador
+    if not coordinador.hospital_id or not coordinador.hospital:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tienes un hospital asignado. Contacta al administrador.",
+        )
+    return coordinador
+
+
 def verificar_coordinador_hospital(
         coordinador: Coordinador,
         hospital_id: int

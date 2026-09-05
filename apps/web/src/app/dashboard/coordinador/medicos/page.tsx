@@ -290,15 +290,47 @@ const handleAsignarMedico = async () => {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Médicos del Hospital</h1>
             <p className="text-gray-600">Gestiona los médicos asignados a tu hospital</p>
           </div>
-          <button
-            onClick={handleOpenAsignarModal}
-            className="mt-4 sm:mt-0 btn-primary flex items-center justify-center space-x-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <span>Asignar Médico</span>
-          </button>
+          <div className="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
+            <Link
+              href="/dashboard/coordinador/medicos/nuevo"
+              className="btn-primary flex items-center justify-center space-x-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              <span>Nuevo Médico</span>
+            </Link>
+
+            <button
+              onClick={handleOpenAsignarModal}
+              className="btn-secondary flex items-center justify-center space-x-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Asignar Médico</span>
+            </button>
+
+            <Link
+              href="/dashboard/coordinador/importar-medicos"
+              className="btn-outline flex items-center justify-center space-x-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span>Importar Médicos</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Las dos acciones se confunden fácil: crear una cuenta nueva no es lo mismo
+            que vincular un médico que ya existe en el sistema. */}
+        <div className="mb-6 rounded-xl bg-blue-50 border border-blue-200 p-4">
+          <p className="text-sm text-blue-800">
+            <strong>Nuevo Médico</strong> crea una cuenta nueva (el sistema le envía una
+            contraseña temporal por correo). <strong>Asignar Médico</strong> vincula a tu
+            hospital un médico que ya existe en el sistema.
+          </p>
         </div>
 
         {error && (
@@ -367,7 +399,8 @@ const handleAsignarMedico = async () => {
                   : 'No hay médicos asignados al hospital'}
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Usa el botón "Asignar Médico" para agregar médicos al hospital
+                Usa "Nuevo Médico" para crear una cuenta nueva, o "Asignar Médico" para
+                vincular uno que ya existe en el sistema
               </p>
             </div>
           ) : (
@@ -420,13 +453,22 @@ const handleAsignarMedico = async () => {
                       )}
                     </div>
 
-                    <button
-                      onClick={() => handleRemoverMedico(medico.id)}
-                      disabled={removing === medico.id}
-                      className="ml-4 px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                    >
-                      {removing === medico.id ? 'Removiendo...' : 'Remover'}
-                    </button>
+                    <div className="ml-4 flex flex-col gap-2">
+                      <Link
+                        href={`/dashboard/coordinador/medicos/${medico.id}/editar`}
+                        className="px-4 py-2 bg-purple-100 text-purple-700 rounded-xl font-semibold hover:bg-purple-200 transition-colors text-sm text-center"
+                      >
+                        Editar
+                      </Link>
+
+                      <button
+                        onClick={() => handleRemoverMedico(medico.id)}
+                        disabled={removing === medico.id}
+                        className="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                      >
+                        {removing === medico.id ? 'Removiendo...' : 'Remover'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

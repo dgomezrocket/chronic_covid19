@@ -93,6 +93,39 @@ export interface RegisterMedicoData {
   hospital_ids?: number[];
 }
 
+// ========== F21: GESTIÓN INDIVIDUAL DE MÉDICOS (COORDINADOR) ==========
+/**
+ * Alta individual de un medico hecha por el coordinador.
+ * Sin `password` (el backend genera una temporal y la envia por correo) y sin
+ * hospital: se deriva del coordinador autenticado.
+ */
+export interface MedicoGestionCreateData {
+  documento: string;
+  nombre: string;
+  email: string;
+  telefono?: string;
+  especialidad_ids?: number[];
+}
+
+/** Edicion de un medico del hospital del coordinador. Sin hospital_ids a proposito. */
+export interface MedicoGestionUpdateData {
+  documento?: string;
+  nombre?: string;
+  email?: string;
+  telefono?: string;
+  especialidad_ids?: number[];
+}
+
+/**
+ * El alta devuelve el medico creado y el estado del correo de bienvenida: un fallo de
+ * SMTP no deshace el alta, asi que la UI tiene que poder avisarlo.
+ */
+export interface MedicoGestionCreateResult {
+  medico: Medico;
+  correo_enviado: boolean;
+  advertencia?: string | null;
+}
+
 // ========== IMPORTACIÓN MASIVA DE MÉDICOS ==========
 export interface MedicoImportErrorRow {
   fila: number;

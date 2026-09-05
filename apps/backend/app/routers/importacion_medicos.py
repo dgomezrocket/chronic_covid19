@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.db.db import get_db
-from app.models.models import Coordinador, Hospital
+from app.models.models import Hospital
 from app.schemas.schemas import MedicoImportResult, MedicoImportErrorRow
 from app.services import email_service
 from app.services.medico_service import (
@@ -32,7 +32,7 @@ from app.services.medico_service import (
     buscar_especialidades_por_nombre,
     MedicoValidationError,
 )
-from app.services.coordinador_service import obtener_coordinador_actual
+from app.services.coordinador_service import obtener_coordinador_con_hospital
 
 router = APIRouter()
 
@@ -103,17 +103,6 @@ SINONIMOS: Dict[str, str] = {
 }
 
 
-def _obtener_coordinador_con_hospital(db: Session, current_user: dict) -> Coordinador:
-    """Valida rol coordinador y que tenga hospital; devuelve el Coordinador."""
-    coordinador = obtener_coordinador_actual(db, current_user)  # 403 si no es coordinador
-    if not coordinador.hospital_id or not coordinador.hospital:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tienes un hospital asignado. Contacta al administrador.",
-        )
-    return coordinador
-
-
 def _celda_a_str(valor) -> str:
     """Convierte un valor de celda a string limpio (maneja None y números)."""
     if valor is None:
@@ -133,7 +122,7 @@ def descargar_plantilla(
     current_user: dict = Depends(get_current_user),
 ):
     """Descarga una plantilla .xlsx con las columnas esperadas y una fila de ejemplo."""
-    _obtener_coordinador_con_hospital(db, current_user)
+    obtener_coordinador_con_hospital(db, current_user)
 
     wb = Workbook()
     ws = wb.active
@@ -178,7 +167,7 @@ def importar_medicos(
     Genera una contraseña temporal para cada uno y envía un correo de bienvenida.
     Las filas con error no detienen el proceso: se crean las válidas y se reportan las inválidas.
     """
-    coordinador = _obtener_coordinador_con_hospital(db, current_user)
+    coordinador = obtener_coordinador_con_hospital(db, current_user)
     hospital: Hospital = coordinador.hospital
 
     # Validar extensión
@@ -374,7 +363,7 @@ def exportar_medicos(
     current_user: dict = Depends(get_current_user),
 ):
     """Exporta a .xlsx los médicos del hospital del coordinador (sin datos sensibles de auth)."""
-    coordinador = _obtener_coordinador_con_hospital(db, current_user)
+    coordinador = obtener_coordinador_con_hospital(db, current_user)
     hospital: Hospital = coordinador.hospital
 
     wb = Workbook()

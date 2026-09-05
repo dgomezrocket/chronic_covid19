@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.db import get_db
-from app.models.models import Coordinador, RolEnum
+from app.models.models import Coordinador, Medico, RolEnum
 from app.schemas.schemas import (
     CoordinadorCreate,
     CoordinadorUpdate,
@@ -17,20 +17,408 @@ from app.schemas.schemas import (
     CoordinadorDashboardOut,
     HospitalDetalladoOut,
     MedicoResponse,
+    MedicoGestionCreate,
+    MedicoGestionUpdate,
+    MedicoGestionCreateOut,
     PacienteOut,
     PacienteConMedicoOut,
 )
 from app.core.security import get_current_user
+from app.services import email_service
 from app.services.coordinador_service import (
     crear_coordinador,
     asignar_hospital_a_coordinador,
     obtener_coordinador_actual,
+    obtener_coordinador_con_hospital,
     obtener_medicos_del_hospital,
     obtener_pacientes_del_hospital,
     obtener_estadisticas_hospital
 )
+from app.services.medico_service import (
+    crear_medico,
+    generar_password_temporal,
+    resolver_especialidades_por_id,
+    normalizar_email,
+    email_en_uso,
+    documento_en_uso,
+    MedicoValidationError,
+)
 
 router = APIRouter()
+
+
+def _medico_de_mi_hospital(db: Session, coordinador: Coordinador, medico_id: int) -> Medico:
+    """
+    Devuelve el médico `medico_id` solo si trabaja en el hospital del coordinador.
+
+    Es el guard anti-IDOR de la gestión individual: el hospital viene del coordinador
+    autenticado, nunca del request, así que un coordinador no puede leer ni editar
+    médicos de otro hospital.
+    """
+    medico = db.query(Medico).filter(Medico.id == medico_id).first()
+    if not medico:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Médico no encontrado"
+        )
+    if coordinador.hospital not in medico.hospitales:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este médico no pertenece a tu hospital"
+        )
+    return medico
+
+
+# IMPORTANTE: las rutas estaticas /me... van ANTES de /{coordinador_id}. Si no,
+# FastAPI resuelve /coordinadores/me contra la ruta dinamica e intenta parsear
+# "me" como int, devolviendo 422.
+# ========== ENDPOINTS PARA COORDINADORES (acceso a sus propios datos) ==========
+
+@router.get("/me", response_model=CoordinadorOut)
+def get_mi_perfil(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene el perfil del coordinador autenticado.
+    ✅ Cualquier coordinador puede acceder a sus propios datos.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+    
+    coordinador = obtener_coordinador_actual(db, current_user)
+    return coordinador
+
+
+@router.get("/me/dashboard", response_model=CoordinadorDashboardOut)
+def get_mi_dashboard(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene el dashboard del coordinador con estadísticas de su hospital.
+    ✅ Cualquier coordinador puede acceder a su dashboard.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+    
+    coordinador = obtener_coordinador_actual(db, current_user)
+
+    if not coordinador.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El coordinador no tiene un hospital asignado"
+        )
+
+    # Obtener estadísticas del hospital
+    estadisticas = obtener_estadisticas_hospital(db, coordinador.hospital_id, current_user)
+
+    # Construir respuesta
+    dashboard = {
+        "coordinador": coordinador,
+        "hospital": coordinador.hospital,
+        "total_medicos": estadisticas["total_medicos"],
+        "total_pacientes": estadisticas["total_pacientes"],
+        "pacientes_asignados": estadisticas["pacientes_asignados"],
+        "pacientes_sin_asignar": estadisticas["pacientes_sin_medico"]
+    }
+
+    return dashboard
+
+
+@router.get("/me/hospital", response_model=HospitalDetalladoOut)
+def get_mi_hospital(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene el hospital asignado al coordinador con información detallada.
+    ✅ Cualquier coordinador puede acceder a la info de su hospital.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+    
+    coordinador = obtener_coordinador_actual(db, current_user)
+
+    if not coordinador.hospital:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tienes un hospital asignado"
+        )
+
+    # Contar pacientes
+    pacientes_count = len(coordinador.hospital.pacientes)
+
+    hospital_detallado = {
+        **coordinador.hospital.__dict__,
+        "coordinadores": [coordinador],
+        "medicos": coordinador.hospital.medicos,
+        "pacientes_count": pacientes_count
+    }
+
+    return hospital_detallado
+
+
+@router.get("/me/medicos", response_model=List[MedicoResponse])
+def get_mis_medicos(
+    especialidad_id: Optional[int] = Query(None, description="Filtrar por especialidad"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene los médicos del hospital del coordinador.
+    Opcionalmente filtrados por especialidad.
+    ✅ Cualquier coordinador puede ver los médicos de su hospital.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+    
+    coordinador = obtener_coordinador_actual(db, current_user)
+
+    if not coordinador.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tienes un hospital asignado"
+        )
+
+    medicos = obtener_medicos_del_hospital(db, coordinador.hospital_id, especialidad_id)
+    return medicos
+
+
+@router.post("/me/medicos", response_model=MedicoGestionCreateOut, status_code=status.HTTP_201_CREATED)
+def crear_medico_de_mi_hospital(
+    medico_data: MedicoGestionCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Da de alta un médico y lo asocia al hospital del coordinador autenticado.
+
+    - No se define contraseña: se genera una temporal y se envía por correo, igual que
+      en la importación masiva. El médico debe cambiarla en su primer ingreso.
+    - El hospital NO se toma del request: se deriva del coordinador (anti-IDOR).
+    - Un fallo de SMTP NO deshace el alta: se informa en `correo_enviado`/`advertencia`.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+
+    coordinador = obtener_coordinador_con_hospital(db, current_user)
+    hospital = coordinador.hospital
+
+    # Las especialidades se resuelven ANTES de crear: un ID inválido no deja nada a medio escribir.
+    try:
+        especialidades = resolver_especialidades_por_id(db, medico_data.especialidad_ids or [])
+    except MedicoValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    password_temporal = generar_password_temporal()
+    try:
+        nuevo_medico = crear_medico(
+            db,
+            documento=medico_data.documento,
+            nombre=medico_data.nombre,
+            email=str(medico_data.email),
+            telefono=medico_data.telefono,
+            password=password_temporal,
+            especialidades=especialidades,
+            hospitales=[hospital],        # <- derivado del token, nunca del request
+            debe_cambiar_password=True,
+            commit=True,
+            # `email_verificado` no se pasa: el default True es el criterio de las altas
+            # administrativas (igual que la importación masiva).
+        )
+    except MedicoValidationError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # El médico ya está commiteado. El correo es best-effort: si falla, se avisa pero
+    # no se pierde el alta (mismo criterio que `importacion_medicos`).
+    correo_enviado = False
+    advertencia = None
+    try:
+        email_service.enviar_bienvenida_medico(
+            email=nuevo_medico.email,
+            nombre=nuevo_medico.nombre,
+            hospital_nombre=hospital.nombre,
+            password_temporal=password_temporal,
+        )
+        correo_enviado = True
+    except email_service.EmailNoConfiguradoError:
+        advertencia = "Médico creado, pero el correo no se envió (SMTP no configurado)"
+    except Exception as e:  # noqa: BLE001 - cualquier fallo de envío
+        advertencia = f"Médico creado, pero falló el envío del correo: {e}"
+
+    return {
+        "medico": nuevo_medico,
+        "correo_enviado": correo_enviado,
+        "advertencia": advertencia,
+    }
+
+
+@router.get("/me/medicos/{medico_id}", response_model=MedicoResponse)
+def get_medico_de_mi_hospital(
+    medico_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene un médico del hospital del coordinador (para precargar el formulario de edición).
+    403 si el médico pertenece a otro hospital.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+
+    coordinador = obtener_coordinador_con_hospital(db, current_user)
+    return _medico_de_mi_hospital(db, coordinador, medico_id)
+
+
+@router.put("/me/medicos/{medico_id}", response_model=MedicoResponse)
+def update_medico_de_mi_hospital(
+    medico_id: int,
+    medico_update: MedicoGestionUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Actualiza nombre, documento, email, teléfono y especialidades de un médico
+    del hospital del coordinador.
+
+    No toca el rol, la contraseña ni los hospitales: el vínculo médico-hospital se
+    sigue gestionando solo por asignar/remover (`MedicoGestionUpdate` no declara
+    esos campos, así que no pueden llegar en el body).
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+
+    coordinador = obtener_coordinador_con_hospital(db, current_user)
+    medico = _medico_de_mi_hospital(db, coordinador, medico_id)
+
+    update_data = medico_update.model_dump(exclude_unset=True)
+    especialidad_ids = update_data.pop("especialidad_ids", None)
+
+    # `exclude_unset` deja pasar {"nombre": ""}, y un setattr a ciegas blanquearía una
+    # columna obligatoria: por eso se valida cada campo antes de asignarlo.
+    if "nombre" in update_data:
+        nombre = (update_data["nombre"] or "").strip()
+        if not nombre:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El nombre es obligatorio"
+            )
+        update_data["nombre"] = nombre
+
+    # El email es la credencial de login: se normaliza y se compara sin distinguir
+    # mayúsculas. Conservar el actual (incluso con otro casing) no es un duplicado.
+    if "email" in update_data:
+        nuevo_email = normalizar_email(update_data["email"] or "")
+        if not nuevo_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El email es obligatorio"
+            )
+        if nuevo_email != normalizar_email(medico.email) and email_en_uso(
+            db, nuevo_email, excluir_medico_id=medico.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El email ya está registrado"
+            )
+        update_data["email"] = nuevo_email
+
+    # Un teléfono vacío se guarda como NULL, no como "": así el coordinador puede
+    # borrarlo desde el formulario y la columna queda limpia.
+    if "telefono" in update_data:
+        telefono = (update_data["telefono"] or "").strip()
+        update_data["telefono"] = telefono or None
+
+    if "documento" in update_data:
+        nuevo_documento = str(update_data["documento"] or "").strip()
+        if not nuevo_documento:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El documento es obligatorio"
+            )
+        if nuevo_documento != medico.documento and documento_en_uso(
+            db, nuevo_documento, excluir_medico_id=medico.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El documento de identidad ya está registrado"
+            )
+        update_data["documento"] = nuevo_documento
+
+    # Las especialidades se REEMPLAZAN (misma semántica que `crear_medico`); una lista
+    # vacía las limpia.
+    if especialidad_ids is not None:
+        try:
+            medico.especialidades = resolver_especialidades_por_id(db, especialidad_ids)
+        except MedicoValidationError as e:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    for field, value in update_data.items():
+        setattr(medico, field, value)
+
+    db.commit()
+    db.refresh(medico)
+
+    return medico
+
+
+@router.get("/me/pacientes", response_model=List[PacienteConMedicoOut])
+def get_mis_pacientes(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Obtiene los pacientes del hospital del coordinador.
+    ✅ Cualquier coordinador puede ver los pacientes de su hospital.
+    """
+    # ✅ Verificar que sea coordinador
+    if current_user["rol"] != "coordinador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para coordinadores"
+        )
+    
+    coordinador = obtener_coordinador_actual(db, current_user)
+
+    if not coordinador.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tienes un hospital asignado"
+        )
+
+    pacientes = obtener_pacientes_del_hospital(db, coordinador.hospital_id, current_user)
+    return pacientes
 
 
 # ========== ENDPOINTS PARA ADMINISTRADORES ==========
@@ -256,160 +644,3 @@ def delete_coordinador(
         "message": "Coordinador eliminado exitosamente",
         "id": coordinador_id
     }
-
-
-# ========== ENDPOINTS PARA COORDINADORES (acceso a sus propios datos) ==========
-
-@router.get("/me", response_model=CoordinadorOut)
-def get_mi_perfil(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Obtiene el perfil del coordinador autenticado.
-    ✅ Cualquier coordinador puede acceder a sus propios datos.
-    """
-    # ✅ Verificar que sea coordinador
-    if current_user["rol"] != "coordinador":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para coordinadores"
-        )
-    
-    coordinador = obtener_coordinador_actual(db, current_user)
-    return coordinador
-
-
-@router.get("/me/dashboard", response_model=CoordinadorDashboardOut)
-def get_mi_dashboard(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Obtiene el dashboard del coordinador con estadísticas de su hospital.
-    ✅ Cualquier coordinador puede acceder a su dashboard.
-    """
-    # ✅ Verificar que sea coordinador
-    if current_user["rol"] != "coordinador":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para coordinadores"
-        )
-    
-    coordinador = obtener_coordinador_actual(db, current_user)
-
-    if not coordinador.hospital_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El coordinador no tiene un hospital asignado"
-        )
-
-    # Obtener estadísticas del hospital
-    estadisticas = obtener_estadisticas_hospital(db, coordinador.hospital_id, current_user)
-
-    # Construir respuesta
-    dashboard = {
-        "coordinador": coordinador,
-        "hospital": coordinador.hospital,
-        "total_medicos": estadisticas["total_medicos"],
-        "total_pacientes": estadisticas["total_pacientes"],
-        "pacientes_asignados": estadisticas["pacientes_asignados"],
-        "pacientes_sin_asignar": estadisticas["pacientes_sin_medico"]
-    }
-
-    return dashboard
-
-
-@router.get("/me/hospital", response_model=HospitalDetalladoOut)
-def get_mi_hospital(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Obtiene el hospital asignado al coordinador con información detallada.
-    ✅ Cualquier coordinador puede acceder a la info de su hospital.
-    """
-    # ✅ Verificar que sea coordinador
-    if current_user["rol"] != "coordinador":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para coordinadores"
-        )
-    
-    coordinador = obtener_coordinador_actual(db, current_user)
-
-    if not coordinador.hospital:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tienes un hospital asignado"
-        )
-
-    # Contar pacientes
-    pacientes_count = len(coordinador.hospital.pacientes)
-
-    hospital_detallado = {
-        **coordinador.hospital.__dict__,
-        "coordinadores": [coordinador],
-        "medicos": coordinador.hospital.medicos,
-        "pacientes_count": pacientes_count
-    }
-
-    return hospital_detallado
-
-
-@router.get("/me/medicos", response_model=List[MedicoResponse])
-def get_mis_medicos(
-    especialidad_id: Optional[int] = Query(None, description="Filtrar por especialidad"),
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Obtiene los médicos del hospital del coordinador.
-    Opcionalmente filtrados por especialidad.
-    ✅ Cualquier coordinador puede ver los médicos de su hospital.
-    """
-    # ✅ Verificar que sea coordinador
-    if current_user["rol"] != "coordinador":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para coordinadores"
-        )
-    
-    coordinador = obtener_coordinador_actual(db, current_user)
-
-    if not coordinador.hospital_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tienes un hospital asignado"
-        )
-
-    medicos = obtener_medicos_del_hospital(db, coordinador.hospital_id, especialidad_id)
-    return medicos
-
-
-@router.get("/me/pacientes", response_model=List[PacienteConMedicoOut])
-def get_mis_pacientes(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Obtiene los pacientes del hospital del coordinador.
-    ✅ Cualquier coordinador puede ver los pacientes de su hospital.
-    """
-    # ✅ Verificar que sea coordinador
-    if current_user["rol"] != "coordinador":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este endpoint es solo para coordinadores"
-        )
-    
-    coordinador = obtener_coordinador_actual(db, current_user)
-
-    if not coordinador.hospital_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No tienes un hospital asignado"
-        )
-
-    pacientes = obtener_pacientes_del_hospital(db, coordinador.hospital_id, current_user)
-    return pacientes

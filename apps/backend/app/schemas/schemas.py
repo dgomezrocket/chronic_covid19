@@ -435,6 +435,49 @@ MedicoResponse = MedicoOut
 
 
 # ================================================================
+# F21: GESTION INDIVIDUAL DE MEDICOS POR EL COORDINADOR
+# ================================================================
+# Schemas propios en vez de reutilizar MedicoCreate/MedicoUpdate: esos aceptan
+# `password` y `hospital_ids`, y el coordinador no define ninguno de los dos (la
+# contrasena es temporal y generada, y el hospital se deriva del token).
+# Al no declarar `rol`/`password`/`hashed_password`/`debe_cambiar_password`/
+# `hospital_ids`, `model_dump()` no puede producirlos: no hay mass-assignment posible.
+
+class MedicoGestionCreate(MedicoBase):
+    """Alta individual de un medico hecha por el coordinador (documento/nombre/email/telefono)."""
+    especialidad_ids: List[int] = []
+
+
+class MedicoGestionUpdate(BaseModel):
+    """
+    Edicion de un medico del hospital del coordinador.
+
+    Incluye `documento` (a diferencia de `MedicoUpdate`, que es el autoservicio del
+    medico y no lo permite) y NO incluye `hospital_ids`: el vinculo medico-hospital
+    se sigue gestionando solo por asignar/remover.
+    """
+    documento: Optional[str] = None
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    telefono: Optional[str] = None
+    especialidad_ids: Optional[List[int]] = None
+
+
+class MedicoGestionCreateOut(BaseModel):
+    """
+    Resultado del alta individual: el medico creado + estado del correo de bienvenida.
+
+    Un fallo de SMTP NO deshace el alta, asi que la UI necesita poder avisarlo.
+    """
+    medico: MedicoOut
+    correo_enviado: bool
+    advertencia: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ================================================================
 # COORDINADOR SCHEMAS
 # ================================================================
 
