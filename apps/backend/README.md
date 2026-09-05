@@ -1,4 +1,8 @@
-# Sistema de Monitoreo para Pacientes con COVID-19 Crónico
+# Backend · Sistema de Monitoreo para Pacientes con COVID-19 Crónico
+
+> 📖 Este README cubre **sólo el backend** (`apps/backend`). La documentación completa del
+> monorepo —arquitectura, roles, funcionalidades, tablas de endpoints con sus permisos y
+> despliegue— está en el [README de la raíz](../../README.md).
 
 ## Descripción General del Proyecto
 
@@ -6,8 +10,8 @@ Esta aplicación es un sistema de gestión sanitaria diseñado para monitorear p
 
 - Registro y gestión de pacientes
 - Asignación de médicos a pacientes
-- Gestión de hospitales
-- Cuestionarios de salud dinámicos y envío de formularios
+- Gestión de hospitales y de los médicos de cada hospital
+- Cuestionarios de salud dinámicos, asignación con fecha de vencimiento y envío idempotente de respuestas
 - Mensajería segura entre pacientes y personal médico
 - Servicios basados en ubicación para pacientes y hospitales
 
@@ -17,7 +21,8 @@ Esta aplicación es un sistema de gestión sanitaria diseñado para monitorear p
 - **SQLAlchemy**: ORM para interacción con la base de datos
 - **Alembic**: Gestión de migraciones de base de datos
 - **PostgreSQL**: Sistema de gestión de base de datos relacional
-- **Redis**: Para almacenamiento en caché y gestión de sesiones
+- **openpyxl**: Importación y exportación en Excel (médicos y hospitales)
+- **WebSockets** (Starlette): Chat en tiempo real
 - **JWT**: Para autenticación segura de usuarios
 - **Pydantic**: Validación de datos y configuraciones
 - **Pytest**: Framework para pruebas automatizadas
@@ -26,7 +31,7 @@ Esta aplicación es un sistema de gestión sanitaria diseñado para monitorear p
 
 - Python 3.11 o superior
 - PostgreSQL 15
-- Redis 7
+- Redis 7 *(opcional: previsto en `docker-compose.yml` y en `REDIS_URL`, pero hoy ningún módulo lo usa)*
 
 ## Instalación
 
@@ -58,21 +63,23 @@ Esta aplicación es un sistema de gestión sanitaria diseñado para monitorear p
    - Cree una nueva base de datos
    - Asegúrese de tener un usuario con permisos adecuados
 
-6. Configure Redis:
-   - Asegúrese de que el servidor Redis esté en funcionamiento
-
-7. Cree un archivo `.env` basado en el archivo `.env.example` proporcionado:
+6. Cree un archivo `.env` basado en el archivo `.env.example` proporcionado:
    ```
    # Copie el archivo de ejemplo
    cp .env.example .env
 
    # Edite el archivo para ajustar la configuración según sea necesario
-   # Para desarrollo local, use POSTGRES_SERVER=localhost y REDIS_URL=redis://localhost:6379/0
+   # Para desarrollo local, use POSTGRES_SERVER=localhost
    ```
 
-8. Ejecute las migraciones de la base de datos:
+7. Ejecute las migraciones de la base de datos:
    ```
    alembic upgrade head
+   ```
+
+8. Cree el primer administrador (interactivo):
+   ```
+   python -m app.scripts.create_first_admin
    ```
 
 9. Inicie la aplicación:
@@ -90,265 +97,31 @@ Una vez que la aplicación esté en funcionamiento, puede acceder a la documenta
 
 ### Endpoints de la API
 
-#### Autenticación
-
-- **POST** `/api/v1/auth/register` - Registrar un nuevo usuario
-  - Parámetros: email, password, nombre, apellido, tipo_usuario
-  - Respuesta: datos del usuario y token de acceso
-
-- **POST** `/api/v1/auth/login` - Iniciar sesión
-  - Parámetros: email, password
-  - Respuesta: token de acceso y token de actualización
-
-- **POST** `/api/v1/auth/refresh` - Actualizar token
-  - Parámetros: refresh_token
-  - Respuesta: nuevo token de acceso
-
-- **POST** `/api/v1/auth/logout` - Cerrar sesión
-  - Parámetros: token
-  - Respuesta: confirmación de cierre de sesión
-
-- **POST** `/auth/forgot-password` - Solicitar restablecimiento de contraseña
-  - Parámetros: email
-  - Respuesta: mensaje genérico (no revela si el email está registrado); si existe, envía un token por correo
-
-- **POST** `/auth/reset-password` - Establecer nueva contraseña
-  - Parámetros: token, new_password
-  - Respuesta: confirmación de cambio de contraseña (token de un solo uso y con expiración)
-
-- **POST** `/auth/verify-email` - Verificar la cuenta con el token recibido por correo (F04)
-  - Parámetros: token
-  - Respuesta: confirmación de verificación (token de un solo uso y con expiración). No inicia sesión:
-    el usuario debe autenticarse por `/auth/login`. Si la cuenta ya estaba verificada devuelve éxito,
-    para que reabrir el enlace no muestre un error
-
-- **POST** `/auth/resend-verification` - Reenviar el correo de verificación.
-  - Parámetros: email
-  - Respuesta: mensaje genérico (no revela si el email existe ni si ya estaba verificado); si corresponde,
-    invalida los enlaces anteriores y envía uno nuevo
-
-> Nota: el autoregistro de pacientes y médicos (`/auth/register`, `/auth/register/paciente`,
-> `/auth/register/medico`) **ya no devuelve un token de acceso**: la cuenta queda pendiente de verificar
-> el email. Los médicos creados por la importación masiva y las cuentas preexistentes quedan verificados
-> y su flujo no cambia.
-
-#### Pacientes
-
-- **GET** `/api/v1/pacientes` - Listar todos los pacientes (admin/médico)
-  - Parámetros query: skip, limit, nombre, apellido, estado
-  - Respuesta: lista de pacientes paginada
-
-- **POST** `/api/v1/pacientes` - Crear un nuevo paciente (admin)
-  - Parámetros: datos completos del paciente
-  - Respuesta: datos del paciente creado
-
-- **GET** `/api/v1/pacientes/{id}` - Obtener detalles de un paciente
-  - Respuesta: datos completos del paciente
-
-- **PUT** `/api/v1/pacientes/{id}` - Actualizar información de un paciente
-  - Parámetros: campos a actualizar
-  - Respuesta: datos actualizados del paciente
-
-- **DELETE** `/api/v1/pacientes/{id}` - Eliminar un paciente (admin)
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/pacientes/{id}/historial-medico` - Obtener historial médico
-  - Respuesta: historial médico completo del paciente
-
-- **GET** `/api/v1/pacientes/{id}/formularios` - Listar formularios del paciente
-  - Parámetros query: skip, limit, fecha_inicio, fecha_fin
-  - Respuesta: lista de formularios completados
-
-- **POST** `/api/v1/pacientes/{id}/formularios` - Enviar respuesta a formulario
-  - Parámetros: id_formulario, respuestas
-  - Respuesta: confirmación de envío
-
-- **GET** `/api/v1/pacientes/{id}/medicos` - Listar médicos asignados
-  - Respuesta: lista de médicos asignados al paciente
-
-- **GET** `/api/v1/pacientes/cercanos` - Buscar pacientes por ubicación
-  - Parámetros query: latitud, longitud, distancia_km
-  - Respuesta: lista de pacientes cercanos
-
-#### Médicos
-
-- **GET** `/api/v1/medicos` - Listar todos los médicos
-  - Parámetros query: skip, limit, especialidad, hospital
-  - Respuesta: lista de médicos paginada
-
-- **POST** `/api/v1/medicos` - Registrar un nuevo médico (admin)
-  - Parámetros: datos completos del médico
-  - Respuesta: datos del médico creado
-
-- **GET** `/api/v1/medicos/{id}` - Obtener detalles de un médico
-  - Respuesta: datos completos del médico
-
-- **PUT** `/api/v1/medicos/{id}` - Actualizar información de un médico
-  - Parámetros: campos a actualizar
-  - Respuesta: datos actualizados del médico
-
-- **DELETE** `/api/v1/medicos/{id}` - Eliminar un médico (admin)
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/medicos/{id}/pacientes` - Listar pacientes asignados
-  - Parámetros query: skip, limit, estado
-  - Respuesta: lista de pacientes asignados al médico
-
-- **POST** `/api/v1/medicos/{id}/pacientes` - Asignar paciente a médico
-  - Parámetros: id_paciente
-  - Respuesta: confirmación de asignación
-
-- **DELETE** `/api/v1/medicos/{id}/pacientes/{id_paciente}` - Desasignar paciente
-  - Respuesta: confirmación de desasignación
-
-- **GET** `/api/v1/medicos/especialidades` - Listar todas las especialidades
-  - Respuesta: lista de especialidades médicas disponibles
-
-- **GET** `/api/v1/medicos/cercanos` - Buscar médicos por ubicación
-  - Parámetros query: latitud, longitud, distancia_km, especialidad
-  - Respuesta: lista de médicos cercanos
-
-#### Hospitales
-
-- **GET** `/api/v1/hospitales` - Listar todos los hospitales
-  - Parámetros query: skip, limit, nombre, ciudad, servicios
-  - Respuesta: lista de hospitales paginada
-
-- **POST** `/api/v1/hospitales` - Registrar un nuevo hospital (admin)
-  - Parámetros: datos completos del hospital
-  - Respuesta: datos del hospital creado
-
-- **GET** `/api/v1/hospitales/{id}` - Obtener detalles de un hospital
-  - Respuesta: datos completos del hospital
-
-- **PUT** `/api/v1/hospitales/{id}` - Actualizar información de un hospital
-  - Parámetros: campos a actualizar
-  - Respuesta: datos actualizados del hospital
-
-- **DELETE** `/api/v1/hospitales/{id}` - Eliminar un hospital (admin)
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/hospitales/{id}/medicos` - Listar médicos de un hospital
-  - Parámetros query: skip, limit, especialidad
-  - Respuesta: lista de médicos del hospital
-
-- **GET** `/api/v1/hospitales/cercanos` - Buscar hospitales por ubicación
-  - Parámetros query: latitud, longitud, distancia_km
-  - Respuesta: lista de hospitales cercanos
-
-- **GET** `/api/v1/hospitales/servicios` - Listar todos los servicios disponibles
-  - Respuesta: lista de servicios hospitalarios disponibles
-
-#### Formularios
-
-- **GET** `/api/v1/formularios` - Listar todos los formularios
-  - Parámetros query: skip, limit, categoria, activo
-  - Respuesta: lista de formularios paginada
-
-- **POST** `/api/v1/formularios` - Crear un nuevo formulario (admin/médico)
-  - Parámetros: título, descripción, preguntas, categoría
-  - Respuesta: datos del formulario creado
-
-- **GET** `/api/v1/formularios/{id}` - Obtener detalles de un formulario
-  - Respuesta: datos completos del formulario
-
-- **PUT** `/api/v1/formularios/{id}` - Actualizar un formulario
-  - Parámetros: campos a actualizar
-  - Respuesta: datos actualizados del formulario
-
-- **DELETE** `/api/v1/formularios/{id}` - Eliminar un formulario (admin)
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/formularios/{id}/respuestas` - Listar respuestas a un formulario
-  - Parámetros query: skip, limit, fecha_inicio, fecha_fin
-  - Respuesta: lista de respuestas al formulario
-
-- **GET** `/api/v1/formularios/categorias` - Listar categorías de formularios
-  - Respuesta: lista de categorías disponibles
-
-- **POST** `/api/v1/formularios/asignar` - Asignar formulario a paciente(s)
-  - Parámetros: id_formulario, id_pacientes, fecha_limite, recordatorio
-  - Respuesta: confirmación de asignación
-
-#### Mensajería
-
-- **GET** `/api/v1/mensajes` - Obtener mensajes del usuario autenticado
-  - Parámetros query: skip, limit, leido, remitente
-  - Respuesta: lista de mensajes paginada
-
-- **POST** `/api/v1/mensajes` - Enviar un nuevo mensaje
-  - Parámetros: destinatario_id, asunto, contenido, archivos_adjuntos
-  - Respuesta: confirmación de envío y datos del mensaje
-
-- **GET** `/api/v1/mensajes/{id}` - Obtener detalles de un mensaje
-  - Respuesta: datos completos del mensaje
-
-- **PUT** `/api/v1/mensajes/{id}/leer` - Marcar mensaje como leído
-  - Respuesta: estado actualizado del mensaje
-
-- **DELETE** `/api/v1/mensajes/{id}` - Eliminar un mensaje
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/mensajes/conversacion/{id_usuario}` - Obtener conversación
-  - Parámetros query: skip, limit
-  - Respuesta: historial de mensajes con el usuario especificado
-
-#### Estadísticas y Reportes
-
-- **GET** `/api/v1/estadisticas/pacientes` - Estadísticas generales de pacientes
-  - Parámetros query: periodo
-  - Respuesta: datos estadísticos (total, nuevos, activos, etc.)
-
-- **GET** `/api/v1/estadisticas/formularios` - Estadísticas de formularios
-  - Parámetros query: id_formulario, periodo
-  - Respuesta: datos estadísticos de formularios completados
-
-- **GET** `/api/v1/estadisticas/medicos` - Estadísticas de médicos
-  - Respuesta: datos estadísticos de actividad de médicos
-
-- **GET** `/api/v1/reportes/pacientes` - Generar reporte de pacientes
-  - Parámetros query: formato, filtros
-  - Respuesta: archivo de reporte en formato solicitado
-
-- **GET** `/api/v1/reportes/actividad-medica` - Reporte de actividad médica
-  - Parámetros query: id_medico, fecha_inicio, fecha_fin, formato
-  - Respuesta: archivo de reporte en formato solicitado
-
-#### Notificaciones
-
-- **GET** `/api/v1/notificaciones` - Obtener notificaciones del usuario
-  - Parámetros query: skip, limit, leido
-  - Respuesta: lista de notificaciones paginada
-
-- **PUT** `/api/v1/notificaciones/{id}/leer` - Marcar notificación como leída
-  - Respuesta: estado actualizado de la notificación
-
-- **DELETE** `/api/v1/notificaciones/{id}` - Eliminar una notificación
-  - Respuesta: confirmación de eliminación
-
-- **GET** `/api/v1/notificaciones/configuracion` - Obtener config. de notificaciones
-  - Respuesta: preferencias de notificaciones del usuario
-
-- **PUT** `/api/v1/notificaciones/configuracion` - Actualizar config. de notificaciones
-  - Parámetros: preferencias de notificaciones
-  - Respuesta: preferencias actualizadas
-
-#### Administración del Sistema
-
-- **GET** `/api/v1/admin/usuarios` - Listar todos los usuarios (admin)
-  - Parámetros query: skip, limit, tipo, activo
-  - Respuesta: lista de usuarios paginada
-
-- **PUT** `/api/v1/admin/usuarios/{id}/activar` - Activar/desactivar usuario
-  - Parámetros: estado
-  - Respuesta: estado actualizado del usuario
-
-- **GET** `/api/v1/admin/actividad` - Registro de actividad del sistema
-  - Parámetros query: skip, limit, tipo, usuario, fecha
-  - Respuesta: registro de actividades paginado
-
-- **GET** `/api/v1/admin/estadisticas-sistema` - Estadísticas del sistema
-  - Respuesta: métricas generales del sistema
+> ⚠️ **No hay prefijo `/api/v1`.** Los routers se montan directamente bajo su prefijo en
+> `app/main.py`. La constante `API_V1_STR` existe en `app/core/config.py` pero **no se usa**
+> para montar nada.
+
+Prefijos montados actualmente:
+
+| Prefijo | Router | Contenido |
+|---------|--------|-----------|
+| `/auth` | `auth.py` | Registro, login, recuperación de contraseña, verificación de email, cambio de contraseña |
+| `/pacientes` | `pacientes.py` | Perfil del paciente y sus respuestas de formularios |
+| `/medicos` | `medicos.py` | Listado y perfil de médicos |
+| `/especialidades` | `especialidades.py` | Catálogo de especialidades (CRUD de admin) |
+| `/hospitales` | `hospitales.py` | CRUD, cercanía geográfica, importación/exportación en Excel |
+| `/formularios` | `formularios.py` | Formularios dinámicos, asignaciones, respuestas y listado consolidado |
+| `/mensajes` | `mensajes.py` | Chat REST + WebSocket con ticket JWT |
+| `/admins` | `admins.py` | CRUD de administradores e invitaciones por correo |
+| `/coordinadores` | `coordinadores.py` | Perfil, dashboard del hospital y gestión de sus médicos |
+| `/asignaciones` | `asignaciones.py` | Vínculos médico↔hospital, paciente↔hospital y médico↔paciente |
+| `/importacion-medicos` | `importacion_medicos.py` | Plantilla, importación y exportación de médicos en `.xlsx` |
+
+Más `GET /` (información de la API) y `GET /health` (health check).
+
+**La fuente de verdad del detalle** —métodos, parámetros, esquemas y permisos por rol— es
+Swagger en `/docs`. El [README de la raíz](../../README.md#-api-endpoints) mantiene además
+tablas de todos los endpoints con la autorización requerida de cada uno.
 
 ## Desarrollo
 
@@ -366,41 +139,72 @@ El proyecto utiliza Alembic para las migraciones de base de datos:
    alembic upgrade head
    ```
 
+El *head* actual es `c2d3e4f5a6b7` (constraint única de idempotencia en
+`respuestas_formularios`). Hay una sola cabeza: si `alembic heads` devuelve más de una,
+alguien creó una revisión sin encadenarla.
+
+> ⚠️ El `Dockerfile` ejecuta `alembic upgrade head` **al arrancar el contenedor**. Una
+> migración que falla en producción no se limita a no aplicarse: deja el servicio de Railway
+> en *crash-loop*. Por eso las migraciones de datos de este proyecto son idempotentes y, si
+> detectan un estado que no pueden resolver solas, abortan sin escribir nada en lugar de
+> romper a mitad de camino.
+
 ### Ejecución de Pruebas
 
-Ejecute el conjunto de pruebas con:
-
 ```
+cd apps/backend
 pytest
 ```
+
+Son 102 tests repartidos en cinco suites:
+
+| Suite | Tests | Qué cubre |
+|-------|-------|-----------|
+| `tests/test_coordinador_medicos.py` | 36 | Alta y edición de médicos por el coordinador: duplicados de email/documento, permisos y aislamiento entre hospitales |
+| `tests/test_formularios_vencimiento.py` | 22 | Estado derivado `expirado`, guardas al responder (ajena, vencida, ya respondida) e idempotencia |
+| `tests/test_auth_email_normalizacion.py` | 13 | Registro, login y recuperación de contraseña sin distinguir mayúsculas |
+| `tests/test_pacientes_acceso.py` | 22 | Alcance de `/pacientes` por rol: propio, médico tratante, coordinador del hospital y admin |
+| `tests/test_main.py` | 9 | Smoke: `/` y `/health`, y el camino público completo registro → verificación → login → perfil |
+
+Todas corren sobre **SQLite en memoria** sobreescribiendo `get_db`, así que no hace falta
+tener PostgreSQL levantado. `tests/conftest.py` construye igualmente la `DATABASE_URL` desde
+el `.env` (saneando el BOM si lo hubiera) para los casos que sí la necesiten.
 
 ## Estructura del Proyecto
 
 ```
-chronic_covid19/
+apps/backend/
 ├── alembic/              # Configuración y migraciones de la base de datos
 ├── app/
-│   ├── core/             # Configuraciones centrales y utilidades
-│   ├── crud/             # Operaciones CRUD para modelos
-│   ├── db/               # Configuración de la base de datos
+│   ├── core/             # Configuración, seguridad (JWT) y dependencias/guards de rol
+│   ├── db/               # Engine y sesión de SQLAlchemy (pool_pre_ping + pool_recycle)
 │   ├── models/           # Modelos SQLAlchemy
-│   ├── routers/          # Endpoints de la API organizados por función
+│   ├── routers/          # Endpoints de la API organizados por dominio
 │   ├── schemas/          # Esquemas Pydantic para validación
-│   └── services/         # Lógica de negocio
-├── tests/                # Pruebas unitarias e integradas
+│   ├── services/         # Lógica de negocio (coordinador, médico, email)
+│   ├── utils/            # Reglas compartidas (vencimiento de asignaciones)
+│   ├── scripts/          # Utilidades de consola (create_first_admin)
+│   └── main.py           # Punto de entrada: app FastAPI, routers y CORS
+├── tests/                # Pruebas con Pytest
 ├── .env                  # Variables de entorno (no incluir en git)
 ├── .env.example          # Ejemplo de variables de entorno
-├── main.py               # Punto de entrada de la aplicación
+├── Dockerfile            # Imagen de producción (corre las migraciones al arrancar)
+├── docker-compose.yml    # Backend + PostgreSQL + Redis para desarrollo
 └── requirements.txt      # Dependencias del proyecto
-
 ```
-
 
 ## Seguridad
 
-- La API utiliza tokens JWT para autenticación
-- Las contraseñas son cifradas de forma segura
-- Se implementa control de acceso basado en roles
+- La API utiliza tokens JWT para autenticación (OAuth2 password flow); el chat WebSocket usa
+  un ticket JWT de corta duración emitido por `POST /mensajes/ws-token`.
+- Las contraseñas se almacenan con hash **bcrypt** (passlib).
+- Se implementa control de acceso basado en roles, aplicado en el backend y no sólo en la UI.
+- Los tokens de recuperación de contraseña, verificación de email e invitación de
+  administrador se guardan **sólo hasheados** (SHA-256), son de un solo uso y expiran.
+- Los identificadores de alcance (hospital del coordinador, pacientes del médico) se derivan
+  **siempre del token**, nunca de parámetros del cliente, para evitar IDOR.
+- Los logs no registran nunca el contenido de las respuestas de formularios: son datos
+  médicos del paciente.
 
 ## Contribuciones
 
@@ -414,7 +218,7 @@ Si desea contribuir a este proyecto, por favor:
 
 Este proyecto está licenciado bajo la Licencia MIT con requisito de atribución.
 
-Copyright (c) 2024 Derlis Gómez
+Copyright (c) 2026 Derlis Gómez
 
 Se concede permiso, de forma gratuita, a cualquier persona que obtenga una copia de este software y los archivos de documentación asociados, para utilizar el Software sin restricciones, incluyendo, sin limitación, los derechos de uso, copia, modificación, fusión, publicación, distribución, sublicencia y/o venta de copias del Software, y para permitir a las personas a las que se les proporcione el Software que lo hagan, sujeto a las siguientes condiciones:
 

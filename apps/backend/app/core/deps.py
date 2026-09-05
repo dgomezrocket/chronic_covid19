@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.db import get_db
-from app.models.models import Admin, Hospital, Medico, Paciente, Coordinador
+from app.models.models import Admin, Asignacion, Hospital, Medico, Paciente, Coordinador
 
 # Configuración - Usar settings centralizado
 SECRET_KEY = settings.SECRET_KEY
@@ -234,6 +234,78 @@ def verificar_paciente_en_hospital(
         )
 
     return True
+
+
+# ========== ALCANCE SOBRE LA FICHA DE UN PACIENTE ==========
+
+def verificar_acceso_a_paciente(
+    paciente_id: int,
+    db: Session,
+    user: dict,
+    *,
+    escritura: bool = False,
+) -> Paciente:
+    """
+    Resuelve si `user` puede ver (o modificar) la ficha de un paciente.
+
+    El alcance sale SIEMPRE del token, nunca de un parámetro del cliente, igual que en
+    `/coordinadores/me/medicos` y en `/formularios/respuestas`:
+
+    - **paciente**: sólo su propia ficha.
+    - **médico**: sólo pacientes con una asignación ACTIVA con él (misma regla que usa
+      `/asignaciones/mis-pacientes`), y sólo lectura.
+    - **coordinador**: sólo pacientes de su hospital, y sólo lectura.
+    - **admin**: todo.
+
+    Devuelve el `Paciente` para que quien llama no repita la consulta.
+
+    Se responde 404 —y no 403— cuando el paciente existe pero está fuera del alcance: un
+    403 confirmaría que ese id corresponde a un paciente real, que es justamente lo que no
+    queremos revelar a quien no debería verlo.
+    """
+    paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
+    if not paciente:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
+
+    rol = user.get("rol")
+    fuera_de_alcance = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado"
+    )
+
+    if rol == "admin":
+        return paciente
+
+    if rol == "paciente":
+        if user.get("id") != paciente.id:
+            raise fuera_de_alcance
+        return paciente
+
+    # A partir de acá sólo queda personal de salud: puede consultar, no editar la ficha.
+    if escritura:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sólo el propio paciente o un administrador pueden modificar estos datos",
+        )
+
+    if rol == "medico":
+        asignado = db.query(Asignacion).filter(
+            Asignacion.medico_id == user.get("id"),
+            Asignacion.paciente_id == paciente.id,
+            Asignacion.activo == True,  # noqa: E712 - comparación de columna, no de Python
+        ).first()
+        if not asignado:
+            raise fuera_de_alcance
+        return paciente
+
+    if rol == "coordinador":
+        coordinador = db.query(Coordinador).filter(Coordinador.id == user.get("id")).first()
+        if not coordinador or not coordinador.hospital_id:
+            raise fuera_de_alcance
+        if paciente.hospital_id != coordinador.hospital_id:
+            raise fuera_de_alcance
+        return paciente
+
+    raise fuera_de_alcance
 
 
 def require_admin_or_coordinador(user: dict = Depends(get_current_user)) -> dict:

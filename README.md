@@ -74,7 +74,7 @@ Este proyecto desarrolla una **solución tecnológica integral** para el seguimi
 ### 👥 Sistema de Roles (RBAC)
 - **Paciente** → app mobile/portal web: perfil, formularios asignados, hospitales cercanos y chat con su médico.
 - **Médico** → portal web: pacientes asignados, creación/asignación de formularios, revisión de respuestas y chat.
-- **Coordinador** → portal web: gestión del hospital, asignación médico–paciente e importación masiva de médicos.
+- **Coordinador** → portal web: gestión del hospital, asignación médico–paciente, alta y edición individual de médicos de su hospital e importación masiva de médicos.
 - **Administrador** → portal web: gestión e importación/exportación de hospitales, coordinadores, especialidades y otros administradores (con invitaciones por correo).
 
 ### 🔐 Autenticación y Seguridad
@@ -171,6 +171,34 @@ la app verifica con el enlace de la web y después puede entrar desde cualquiera
 > que la cuenta no podrá iniciar sesión. En desarrollo, tomá el enlace de los logs del
 > backend o configurá SMTP; `/auth/resend-verification` es la vía de rescate.
 
+#### 🔤 Normalización de datos guardados
+
+Dos migraciones de datos corrigen valores que ya estaban en la base y que el código actual
+ya maneja bien, pero que rompían comparaciones o se veían mal en pantalla.
+
+**Emails en minúsculas** (`a1b2c3d4e5f7`). El email es la credencial de login. Hasta ahora
+el alta lo guardaba tal cual se tipeaba y `/auth/login` lo comparaba de forma exacta: una
+cuenta creada como `Juan@Gmail.com` devolvía **401** al escribirla en minúsculas, y
+`/auth/forgot-password` —que sí normalizaba antes de comparar— nunca la encontraba, así que
+respondía 200 sin generar token ni enviar nada. La migración normaliza las cuatro tablas de
+usuarios y las de tokens.
+
+> ⚠️ La migración **aborta sin tocar nada** si detecta colisiones (dos cuentas que sólo se
+> diferencian por mayúsculas), porque las cuatro tablas tienen `email` único y `/auth/login`
+> las recorre en orden quedándose con la primera coincidencia. En ese caso hay que resolver
+> los duplicados a mano y volver a correrla.
+
+**Textos de formularios** (`b7c8d9e0f1a2`). Algunos formularios quedaron guardados con los
+escapes Unicode como caracteres literales, así que el paciente leía
+`\u00bfC\u00f3mo se ha sentido?` en lugar de `¿Cómo se ha sentido?`. El alcance es
+deliberadamente acotado a la tabla `formularios` (`titulo`, `descripcion` y los textos
+dentro del JSON `preguntas`): **no** toca `respuestas_formularios` ni los nombres de
+pacientes, que son datos escritos por usuarios. Es idempotente —sólo actualiza las filas que
+efectivamente cambian—, así que correrla de nuevo no hace nada.
+
+`normalizarTextoVisible` (`apps/web/src/lib/text.ts` y su par en mobile) sigue existiendo
+como red de seguridad al renderizar, para los datos que la migración no reescribe.
+
 ### 🛡️ Gestión de Administradores
 - Alta de administradores por **invitación por correo**: nadie necesita compartir contraseñas ni cargarlas a mano.
 - Flujo completo:
@@ -188,6 +216,103 @@ la app verifica con el enlace de la web y después puede entrar desde cualquiera
 - Se **asignan a pacientes** (con fecha de expiración e instancias repetibles).
 - Los pacientes los completan desde la app; los médicos consultan las respuestas en solo lectura.
 
+
+#### 🧱 Constructor de formularios compartido
+
+`apps/web/src/components/FormularioBuilder.tsx` es la **única** definición de la interfaz de
+armado de preguntas: la consumen tanto `/dashboard/medico/formularios/crear` como
+`/dashboard/medico/formularios/[id]/editar`, junto con los helpers que exporta
+(`validarFormulario`, `limpiarPreguntas`, `generarIdPregunta`). Antes la pantalla de edición
+era una copia divergente de la de creación, así que las validaciones y los tipos de pregunta
+soportados no coincidían entre una y otra.
+
+#### ⏳ Vencimiento de las asignaciones
+
+`expirado` es un **estado derivado, nunca persistido**: sale de comparar `fecha_expiracion`
+con las **00:00 de hoy**, de modo que un formulario que *vence hoy* todavía se puede
+responder. La comparación es por fecha y no por instante a propósito: `fecha_expiracion` se
+guarda como `DateTime` sin zona, escrito desde la hora local del médico, mientras el resto
+del backend usa `datetime.utcnow()`; comparar la hora exacta lo vencía 3-4 horas antes de lo
+que muestra la pantalla.
+
+La regla vive **espejada en las tres capas** — si se cambia una, hay que cambiar las tres:
+
+| Capa | Archivo | Funciones |
+|------|---------|-----------|
+| 🔧 Backend | `apps/backend/app/utils/formularios.py` | `inicio_de_hoy`, `esta_vencida`, `estado_visible` |
+| 🌐 Web | `apps/web/src/lib/formularios.ts` | `estaVencida`, `asignacionVencida` |
+| 📱 Mobile | `apps/mobile/src/lib/formularios.ts` | `estaVencida` |
+
+Además, responder una asignación **vencida, ajena, ya respondida o cancelada** ahora se
+rechaza en el backend. Antes el bloqueo existía sólo en la interfaz y se salteaba llamando
+la API directamente.
+
+#### 🔁 Envío idempotente y reconciliación
+
+El problema que se resolvió no es de red sino de **epistemología**: un `POST` que no devuelve
+respuesta **no significa que el servidor no lo haya procesado**, significa que no sabemos si
+lo procesó. Entre el teléfono y el proceso FastAPI hay un pool de conexiones de OkHttp y dos
+saltos del proxy de Railway (edge → origen), y cualquiera de ellos puede perder la
+*respuesta* de un POST que ya commiteó. Tratar ese caso como un fallo es lo que hacía que un
+paciente viera «no se pudo enviar» para un formulario que sí se había guardado.
+
+**En el backend** (`POST /formularios/asignaciones/{id}/responder`):
+
+- Acepta un `idempotency_key` opcional (se recorta a 64 caracteres) y devuelve
+  `duplicado: true|false`. Reenviar el **mismo** intento responde `200`, no un `400` engañoso.
+- La comprobación de idempotencia va **antes** de las guardas de estado y vencimiento: el
+  envío original fue válido, así que rechazarlo ahora le mostraría un error al paciente por
+  un dato que sí quedó guardado.
+- `with_for_update()` serializa dos envíos concurrentes de la misma asignación (el doble tap).
+- La constraint `uq_respuestas_asignacion_idempotency` es la última línea de defensa: si el
+  lock no alcanzara, el `IntegrityError` se traduce a la misma respuesta idempotente en lugar
+  de duplicar la respuesta del paciente.
+- Trazas `[FORM_SUBMIT][START|COMMIT_OK|RESPONSE|RECHAZADO|ERROR]` con asignación, clave y
+  `duration_ms`. **Nunca** se loguea el contenido de `respuestas`: son datos médicos.
+
+**En el cliente** (`packages/api-client/src/envio-formulario.ts`):
+
+`enviarRespuestaFormulario` y `verificarEnvioFormulario` devuelven **tres** estados, no dos:
+
+| Estado | Significado | Qué hace la UI |
+|--------|-------------|----------------|
+| `guardado` | El servidor tiene la respuesta (`duplicado` dice si la creó esta llamada) | Confirma y vuelve |
+| `no-guardado` | El servidor confirma que no hay nada guardado (`rechazado` por regla de negocio, o `red`) | Muestra el motivo; reintentar es seguro |
+| `indeterminado` | Se perdió la respuesta y tampoco se pudo verificar | **No afirma nada**: avisa que puede haberse guardado y ofrece *Verificar* |
+
+La reconciliación es **siempre una LECTURA** contra
+`GET /formularios/mis-asignaciones/{id}/mi-respuesta`, que es la única fuente de verdad:
+nunca reintenta la escritura por su cuenta. Los códigos `401/403/404/422` se dan por
+rechazados sin gastar una consulta; el `400` y los `5xx` quedan fuera de esa lista
+justamente porque son ambiguos.
+
+**La clave de idempotencia** (`apps/mobile/src/lib/idempotencia.ts`) se persiste **por
+asignación** en `AsyncStorage` y no en un `useRef`: un `useRef` muere con el montaje de la
+pantalla, así que un reintento después de navegar o de reabrir la app mandaría una clave
+nueva, el backend lo vería como un segundo envío sobre una asignación ya completada y
+respondería 400. Se borra únicamente cuando el envío queda **confirmado**.
+
+> 📝 Migraciones: `a1b2c3d4e5f6` agrega la columna y `c2d3e4f5a6b7` la constraint única
+> `(asignacion_id, idempotency_key)`. Deliberadamente **no** se agregó `UNIQUE(asignacion_id)`:
+> si en producción quedó alguna asignación con dos respuestas anteriores a la guarda «no se
+> puede responder dos veces», crear esa constraint haría fallar `alembic upgrade head` y
+> dejaría el contenedor de Railway en crash-loop.
+
+#### 📊 Consulta consolidada de respuestas
+
+`/dashboard/formularios/respuestas` reúne en una sola vista las asignaciones de formularios
+—respondidas y pendientes— para **médicos y administradores**:
+
+- Tabla compacta con una fila por asignación, paginada, con filtros por paciente
+  (nombre o documento) y estado. El administrador puede además filtrar por médico tratante y
+  por hospital.
+- Modal de detalle con navegación **anterior / siguiente** (botones y flechas `←` `→`) que
+  recorre sólo las filas con respuesta consultable, sin volver al listado.
+- **El alcance por rol se refuerza en el backend**: el médico ve únicamente asignaciones de
+  sus pacientes activos y los parámetros `medico_id` / `hospital_id` se **ignoran** para él
+  (no amplían el alcance). Paciente y coordinador reciben `403`.
+- El filtro `expirado` se traduce a SQL en lugar de aplicarse sobre la página ya paginada,
+  para que el `total` y los ítems devueltos coincidan.
 ### 💬 Mensajería en Tiempo Real
 - Chat paciente ↔ médico sobre **WebSocket**, autenticado con un **ticket JWT de corta duración**.
 - Lista de conversaciones, contador de no leídos y marcado de leídos.
@@ -197,6 +322,28 @@ la app verifica con el enlace de la web y después puede entrar desde cualquiera
 - Los coordinadores importan médicos desde un archivo **Excel (.xlsx)**.
 - Generación de contraseñas temporales y envío de correos de bienvenida (SMTP).
 - Plantilla descargable y exportación del padrón de médicos del hospital.
+
+### 🩺 Gestión de Médicos por el Coordinador
+
+Además de la importación masiva, el coordinador da de alta y edita médicos **de a uno**
+desde `/dashboard/coordinador/medicos` (botón **Nuevo médico** → `/medicos/nuevo`, y
+**Editar** → `/medicos/[id]/editar`).
+
+- **El hospital nunca viaja en el request**: se deriva del coordinador autenticado. Por eso
+  un coordinador no puede crear ni tocar médicos de otro hospital, ni aunque manipule el
+  cuerpo de la petición o el `id` de la URL (un médico ajeno devuelve `403`).
+- **El alta no define contraseña**: se genera una temporal, se envía por correo y el médico
+  queda con `debe_cambiar_password = true`, exactamente igual que en la importación masiva.
+- Un **fallo de SMTP no deshace el alta**. La respuesta trae `correo_enviado` y `advertencia`
+  para que el portal pueda avisarlo sin perder el médico ya creado.
+- La **edición** cubre nombre, documento, email, teléfono y especialidades. No toca el rol,
+  la contraseña ni los hospitales: el vínculo médico↔hospital se sigue gestionando sólo por
+  `/asignaciones`, y el esquema de actualización directamente no declara esos campos, así que
+  no pueden llegar en el body.
+- **Validaciones**: el email se normaliza y se compara sin distinguir mayúsculas (conservar
+  el propio con otro casing no es un duplicado), el documento no puede repetirse, un teléfono
+  vacío se guarda como `NULL` en vez de `""`, y las especialidades se **reemplazan** (una
+  lista vacía las limpia).
 
 ### 🏥 Gestión e Importación/Exportación de Hospitales
 Desde `/dashboard/admin/hospitales` el **administrador** puede:
@@ -269,6 +416,19 @@ soporte de `.csv` del comportamiento anterior.
 - El **chat** usa WebSocket: el cliente pide un ticket JWT (`POST /mensajes/ws-token`) y abre la conexión a `/mensajes/ws/{paciente_id}/{medico_id}`.
 - Despliegue: la **web** se publica en **Vercel** ([saludenmapa.com](https://www.saludenmapa.com)) y el **backend** en **Railway**; la app mobile se compila con **EAS Build**.
 
+### Robustez de la conexión
+
+Dos detalles que no se ven en el diagrama pero explican fallas que parecían de red:
+
+- **`pool_pre_ping=True` + `pool_recycle=1800`** en `apps/backend/app/db/db.py`. Sin esto,
+  una conexión rancia del pool —el PostgreSQL gestionado cierra las ociosas— dejaba el
+  request colgado hasta el timeout TCP del sistema operativo, muy por encima de los 30 s del
+  cliente: el usuario veía «no se pudo conectar» aunque el servidor terminara procesando el
+  pedido. `pool_pre_ping` descarta las conexiones muertas antes de usarlas y `pool_recycle`
+  las renueva antes de que el otro extremo las cierre.
+- El **chat WebSocket** persiste los mensajes vía `run_in_threadpool`, para que el I/O
+  sincrónico de SQLAlchemy no bloquee el event loop mientras hay conexiones abiertas.
+
 ---
 
 ## 🛠️ Tecnologías Utilizadas
@@ -285,7 +445,7 @@ soporte de `.csv` del comportamiento anterior.
 - **passlib + bcrypt** — Hash de contraseñas
 - **WebSockets** (nativos de Starlette) — Chat en tiempo real
 - **openpyxl** — Importación/exportación de médicos y hospitales en Excel
-- **SMTP (stdlib)** — Envío de correos (recuperación de contraseña, alta de médicos)
+- **SMTP (stdlib)** — Envío de correos (recuperación de contraseña, verificación de cuenta, invitaciones de administrador, alta individual y masiva de médicos)
 
 ### 🌐 Frontend Web (`apps/web`)
 - **Next.js 14** (App Router) — Framework React con SSR/SSG
@@ -502,14 +662,16 @@ chronic_covid19/
 │   ├── backend/                 # 🔧 API FastAPI (REST + WebSocket)
 │   │   ├── app/
 │   │   │   ├── core/            # Configuración, seguridad (JWT), dependencias y guards de rol
-│   │   │   ├── db/              # Engine, sesión y Base de SQLAlchemy
+│   │   │   ├── db/              # Engine (pool_pre_ping), sesión y Base de SQLAlchemy
 │   │   │   ├── models/          # Modelos SQLAlchemy (pacientes, médicos, hospitales, ...)
 │   │   │   ├── schemas/         # Esquemas Pydantic
 │   │   │   ├── routers/         # Endpoints por dominio (auth, pacientes, mensajes, ...)
 │   │   │   ├── services/        # Lógica de negocio (coordinador, médico, email)
+│   │   │   ├── utils/           # Reglas compartidas (vencimiento de asignaciones)
 │   │   │   ├── scripts/         # Utilidades (create_first_admin)
 │   │   │   └── main.py          # App FastAPI + montaje de routers + CORS
 │   │   ├── alembic/             # Migraciones de base de datos
+│   │   ├── tests/               # Pytest (conftest + suites por dominio)
 │   │   ├── Dockerfile
 │   │   ├── docker-compose.yml
 │   │   └── requirements.txt
@@ -517,12 +679,13 @@ chronic_covid19/
 │   ├── web/                     # 🌐 Portal Next.js 14 (staff + vistas de paciente)
 │   │   └── src/
 │   │       ├── app/             # App Router: login, register, aceptar-invitacion-admin, dashboard/{admin,coordinador,medico,paciente}
-│   │       ├── components/      # Chat, LocationPicker, mapas (Leaflet), etc.
+│   │       ├── components/      # Chat, LocationPicker, mapas (Leaflet), FormularioBuilder, etc.
+│   │       ├── lib/             # Reglas de vencimiento (formularios.ts) y normalización de texto (text.ts)
 │   │       └── store/           # Estado de sesión (Zustand)
 │   │
 │   └── mobile/                  # 📱 App Expo / React Native (pacientes)
 │       ├── app/                 # Expo Router: (auth) y (tabs): datos, formularios, respuestas, hospitales, mensajes
-│       ├── src/                 # components, hooks, lib (api/auth), store, theme
+│       ├── src/                 # components, hooks, lib (api/auth/idempotencia), store, theme
 │       ├── app.json             # Config Expo (com.covid19monitor.app)
 │       ├── app.config.js        # Inyecta la Google Maps API key desde el entorno
 │       └── eas.json             # Perfiles de build EAS
@@ -530,6 +693,7 @@ chronic_covid19/
 ├── packages/
 │   ├── shared-types/            # 📦 @chronic-covid19/shared-types (tipos/enums TS)
 │   └── api-client/              # 📦 @chronic-covid19/api-client (Axios + Zod)
+│       └── src/envio-formulario.ts  # Envío con reconciliación + su suite de Vitest
 │
 ├── package.json                 # Scripts del monorepo (Turborepo)
 ├── pnpm-workspace.yaml          # Workspaces: apps/* y packages/*
@@ -561,10 +725,30 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 ### 🧑 Pacientes — `/pacientes`
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| GET | `/pacientes/{id}` | Obtener paciente | ✅ |
-| PUT | `/pacientes/{id}` | Actualizar paciente | ✅ |
-| GET | `/pacientes/{id}/formularios` | Respuestas de formularios del paciente | ✅ |
-| POST | `/pacientes/{id}/formularios` | Enviar respuesta de formulario | ✅ |
+| GET | `/pacientes/{id}` | Obtener paciente | ✅ Alcance por rol |
+| PUT | `/pacientes/{id}` | Actualizar paciente | 🧑 Propio / 🛡️ Admin |
+| GET | `/pacientes/{id}/formularios` | Respuestas de formularios del paciente | ✅ Alcance por rol |
+| POST | `/pacientes/{id}/formularios` | Registrar una respuesta | 🧑 Propio |
+
+> 🔒 **Alcance por rol.** Como en el resto del sistema, sobre qué paciente se puede operar
+> se deriva del token y nunca de un parámetro del cliente
+> (`verificar_acceso_a_paciente` en `app/core/deps.py`):
+>
+> | Rol | Alcance |
+> |-----|---------|
+> | 🧑 Paciente | Únicamente su propia ficha |
+> | 🩺 Médico | Sus pacientes con asignación **activa** (misma regla que `/asignaciones/mis-pacientes`); sólo lectura |
+> | 🧭 Coordinador | Pacientes de su hospital; sólo lectura |
+> | 🛡️ Admin | Todos |
+>
+> Un paciente fuera de alcance responde `404`, igual que uno inexistente, para no confirmar
+> qué ids existen. `hospital_id` sólo lo modifica un administrador: el vínculo
+> paciente↔hospital se gestiona por `/asignaciones/paciente-hospital`.
+
+> 📝 `POST /pacientes/{id}/formularios` es un alta directa que **no** valida asignación,
+> vencimiento ni idempotencia. La web y la app no lo usan: envían por
+> `POST /formularios/asignaciones/{id}/responder`, que sí aplica esas reglas. Se mantiene
+> sólo por compatibilidad.
 
 ### 🩺 Médicos — `/medicos`
 | Método | Endpoint | Descripción | Auth |
@@ -618,12 +802,18 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 | GET | `/formularios/{id}/asignaciones` | Listar asignaciones de un formulario | ✅ |
 | GET | `/formularios/mis-asignaciones` | Formularios asignados al paciente | 🧑 Paciente |
 | GET | `/formularios/mis-asignaciones/{id}/mi-respuesta` | Mi respuesta (solo lectura) | 🧑 Paciente |
-| POST | `/formularios/asignaciones/{id}/responder` | Responder un formulario asignado | 🧑 Paciente |
+| POST | `/formularios/asignaciones/{id}/responder` | Responder un formulario asignado (idempotente vía `idempotency_key`) | 🧑 Paciente |
 | GET | `/formularios/{id}/respuestas` | Respuestas de un formulario | 🩺 Creador |
 | GET | `/formularios/asignaciones/{id}/respuesta` | Respuesta de una asignación | 🩺 Médico |
 | GET | `/formularios/paciente/{id}/formularios-completados` | Formularios de un paciente | 🩺 Médico |
 | GET | `/formularios/respuestas` | Listado consolidado de respuestas (paginado, filtros) | 🩺 Médico / Admin |
 | GET | `/formularios/respuestas/{id}` | Detalle de respuesta (solo lectura) | 🩺 Médico / Admin |
+
+> 🔁 `POST /formularios/asignaciones/{id}/responder` acepta un `idempotency_key` opcional en el
+> cuerpo y devuelve `duplicado: true|false`; reenviar el mismo intento responde `200` en vez de
+> «ya respondiste este formulario». `GET /formularios/respuestas` acepta `paciente`, `estado`
+> (`pendiente` · `completado` · `expirado` · `cancelado`), `skip`, `limit` y —sólo para admin—
+> `medico_id` y `hospital_id`. Ver [Envío idempotente y reconciliación](#-envío-idempotente-y-reconciliación).
 
 ### 💬 Mensajes / Chat — `/mensajes`
 | Método | Endpoint | Descripción | Auth |
@@ -667,7 +857,10 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 | GET | `/coordinadores/me` | Perfil del coordinador autenticado | 🧭 Coordinador |
 | GET | `/coordinadores/me/dashboard` | Estadísticas del hospital | 🧭 Coordinador |
 | GET | `/coordinadores/me/hospital` | Detalle de su hospital | 🧭 Coordinador |
-| GET | `/coordinadores/me/medicos` | Médicos de su hospital | 🧭 Coordinador |
+| GET | `/coordinadores/me/medicos` | Médicos de su hospital (filtro `especialidad_id`) | 🧭 Coordinador |
+| POST | `/coordinadores/me/medicos` | Alta de un médico en su hospital (contraseña temporal por correo) | 🧭 Coordinador |
+| GET | `/coordinadores/me/medicos/{medico_id}` | Obtener un médico de su hospital | 🧭 Coordinador |
+| PUT | `/coordinadores/me/medicos/{medico_id}` | Actualizar un médico de su hospital | 🧭 Coordinador |
 | GET | `/coordinadores/me/pacientes` | Pacientes de su hospital | 🧭 Coordinador |
 
 ### 🔗 Asignaciones — `/asignaciones`
@@ -707,6 +900,7 @@ API REST + WebSocket servida por FastAPI. **No hay prefijo `/api/v1`**: los rout
 ```bash
 pnpm dev          # Ejecuta las apps en paralelo (Turborepo)
 pnpm build        # Compila todas las apps y packages
+pnpm test         # Corre los tests de los workspaces (turbo run test)
 pnpm lint         # Lint de todos los workspaces
 pnpm format       # Formatea con Prettier
 
@@ -737,6 +931,37 @@ Los packages se compilan con `tsc`. Turborepo los construye automáticamente ant
 pnpm --filter @chronic-covid19/shared-types build
 pnpm --filter @chronic-covid19/api-client build
 ```
+
+### 🧪 Pruebas
+
+```bash
+# Todo el monorepo (JS/TS)
+pnpm test
+
+# 🔧 Backend — 102 tests
+cd apps/backend && pytest
+
+# 📦 api-client — 19 tests (Vitest)
+pnpm --filter @chronic-covid19/api-client test
+```
+
+| Suite | Tests | Qué cubre |
+|-------|-------|-----------|
+| `apps/backend/tests/test_coordinador_medicos.py` | 36 | Alta y edición de médicos por el coordinador: duplicados de email/documento, permisos y aislamiento entre hospitales |
+| `apps/backend/tests/test_formularios_vencimiento.py` | 22 | Estado derivado `expirado`, guardas al responder (ajena, vencida, ya respondida) e idempotencia |
+| `apps/backend/tests/test_auth_email_normalizacion.py` | 13 | Registro, login y recuperación de contraseña sin distinguir mayúsculas |
+| `apps/backend/tests/test_pacientes_acceso.py` | 22 | Alcance de `/pacientes` por rol: propio, médico tratante, coordinador del hospital y admin |
+| `apps/backend/tests/test_main.py` | 9 | Smoke: `/` y `/health`, y el camino público completo registro → verificación → login → perfil |
+| `packages/api-client/src/envio-formulario.test.ts` | 19 | Los tres estados de la reconciliación del envío, sin red ni React Native |
+
+Las cinco suites del backend corren sobre **SQLite en memoria** con `get_db` sobreescrito,
+así que no necesitan una base PostgreSQL levantada. `tests/conftest.py` arma igualmente la
+`DATABASE_URL` a partir del `.env` (saneando el BOM si lo hubiera) para los casos que sí la
+requieran.
+
+`envio-formulario.ts` pide sus dependencias como interfaz (`DependenciasEnvioFormulario`) y
+recibe la espera como parámetro inyectable, justamente para poder probar la lógica de
+decisión aislada y sin `sleep`.
 
 ### 🗄️ Migraciones de base de datos (Alembic)
 
